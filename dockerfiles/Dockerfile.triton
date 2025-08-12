@@ -18,14 +18,12 @@ ARG CUSTOM_LLVM=false
 FROM registry.access.redhat.com/ubi9/python-312 AS base
 ARG CUSTOM_LLVM
 
-# NOTE: Requires host build system to have a valid Red Hat Subscription if true
-ARG NSIGHT_GUI=false
-
 USER 0
 
 RUN dnf -y update && \
     dnf -y install clang cmake lld ninja-build openblas openblas-devel \
-    llvm llvm-libs libomp libomp-devel sudo && \
+    llvm llvm-libs libglvnd-opengl libomp libomp-devel libxkbfile \
+    qt5-qtwayland sudo xcb-util-cursor && \
     dnf clean all
 
 # Stage for llvm-local-true

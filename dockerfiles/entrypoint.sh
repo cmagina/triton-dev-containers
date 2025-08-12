@@ -74,8 +74,7 @@ install_system_dependencies() {
         sudo dnf -y config-manager --add-repo ${CUDA_REPO}
         sudo dnf -y install cublasmp cuda-cupti-${CUDA_VERSION} \
             cuda-gdb-${CUDA_VERSION} cuda-nsight-${CUDA_VERSION} \
-            cuda-nsight-compute-${CUDA_VERSION} cuda-nsight-systems-${CUDA_VERSION} \
-            libxkbfile qt5-qtwayland xcb-util-cursor
+            cuda-nsight-compute-${CUDA_VERSION} cuda-nsight-systems-${CUDA_VERSION}
         sudo dnf clean all
 
         # Create a symlink to the installed version of CUDA
