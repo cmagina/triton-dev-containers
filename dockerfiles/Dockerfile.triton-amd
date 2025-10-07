@@ -14,24 +14,27 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG CUSTOM_LLVM=false
-ARG ROCM_VERSION=6.2
+ARG UBI_VERSION=9
+FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
 
-# Base Stage with ROCm Installation
-FROM registry.access.redhat.com/ubi9/python-312 AS base
-ARG ROCM_VERSION=6.2
+ARG INSTALL_LLVM=skip
+ARG INSTALL_TORCH=pip
+ARG INSTALL_TRITON=source
+ARG INSTALL_VLLM=skip
+
 USER 0
 
+ARG ROCM_VERSION=6.4.4
+ARG AMDGPU_INSTALL_URL=https://repo.radeon.com/amdgpu-install/${ROCM_VERSION}/rhel
+
+# Install the AMD ROCm Repo and GPG key
+RUN source /etc/os-release && \
+    AMDGPU_INSTALL_RPM=$(curl -s ${AMDGPU_INSTALL_URL}/${VERSION_ID}/ | grep href | sed -e 's/.*href="//' -e 's/".*//' |grep "amdgpu-install-${ROCM_VERSION%.*}.*${VERSION_ID%.*}.noarch.rpm") && \
+    dnf -y install ${AMDGPU_INSTALL_URL}/${VERSION_ID}/${AMDGPU_INSTALL_RPM}
+
 # Install the ROCm rpms
-RUN echo "[ROCm]" > /etc/yum.repos.d/rocm.repo && \
-    echo "name=ROCm" >> /etc/yum.repos.d/rocm.repo && \
-    echo "baseurl=https://repo.radeon.com/rocm/rhel9/$ROCM_VERSION/main" >> /etc/yum.repos.d/rocm.repo && \
-    echo "enabled=1" >> /etc/yum.repos.d/rocm.repo && \
-    echo "gpgcheck=0" >> /etc/yum.repos.d/rocm.repo && \
-    dnf install -y llvm clang clang-libs lld && \
-    dnf install -y --nodocs --setopt=install_weak_deps=False \
+RUN dnf -y install --nodocs --setopt=install_weak_deps=False \
         amd-smi-lib \
-        amd-smi \
         miopen-hip \
         rocm-core \
         rocm-hip-libraries \
@@ -39,51 +42,18 @@ RUN echo "[ROCm]" > /etc/yum.repos.d/rocm.repo && \
     dnf clean all && rm -rf /var/cache/yum
 
 # Set environment variables for ROCm
-ENV LC_ALL=C.UTF-8 \
-LANG=C.UTF-8 \
-ROCM_PATH=/opt/rocm \
-LD_LIBRARY_PATH=/usr/lib64:/usr/lib:/opt/rocm/lib:/opt/rocm/llvm/lib \
-PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH
+ENV ROCM_VERSION=$ROCM_VERSION \
+    ROCM_PATH=/opt/rocm \
+    LD_LIBRARY_PATH=/usr/lib64:/usr/lib:/opt/rocm/lib:/opt/rocm/llvm/lib \
+    PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH \
+    INSTALL_TORCH=$INSTALL_TORCH \
+    INSTALL_TRITON=$INSTALL_TRITON \
+    INSTALL_VLLM=$INSTALL_VLLM
 
-# LLVM Integration Stages
-FROM base AS llvm-local-true
-COPY --from=quay.io/triton-dev-containers/llvm:latest /install /llvm-project/install
-
-FROM base AS llvm-local-false
-ENV TRITON_OFFLINE_BUILD=NO
-
-# Final Stage
-FROM llvm-local-${CUSTOM_LLVM} AS final
-ARG ROCM_VERSION=6.2
-
-# Create the /workspace directory and set permissions
-RUN mkdir -p /workspace && \
-    python -m venv /workspace && \
-    echo "unset BASH_ENV PROMPT_COMMAND ENV" >> /workspace/bin/activate && \
-    chmod -R 777 /workspace
-
-ENV BASH_ENV=/workspace/bin/activate \
-    ENV=/workspace/bin/activate \
-    PROMPT_COMMAND=". /workspace/bin/activate" \
-    PYTHON_VERSION=3.11 \
-    PATH=/workspace/bin:$PATH \
-    PYTHONUNBUFFERED=1 \
-    AMD=true \
-    ROCM_VERSION=$ROCM_VERSION \
-    PIP_PREFIX=/workspace \
-    PYTHONPATH=/workspace/lib/python$PYTHON_VERSION/site-packages \
-    XDG_CACHE_HOME=/workspace \
-    TRITON_CACHE_DIR=/workspace/.triton/cache \
-    TRITON_HOME=/workspace/
-
-WORKDIR /workspace
-RUN echo 'export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-RUN echo "export MAX_JOBS=$(nproc --all)" >> "${HOME}"/.bashrc
-COPY --from=quay.io/triton-dev-containers/gosu /usr/local/bin/gosu /usr/local/bin/gosu
-COPY dockerfiles/user.sh user.sh
-COPY dockerfiles/entrypoint.sh /entrypoint.sh
 COPY hack/triton-gpu-check.py triton-gpu-check.py
 COPY examples/triton-vector-add-rocm.py triton-vector-add-rocm.py
 COPY examples/flash_attention_demo.ipynb flash_attention_demo.ipynb
+
+COPY scripts/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tail", "-f", "/dev/null"]

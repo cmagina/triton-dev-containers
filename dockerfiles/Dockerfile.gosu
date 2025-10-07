@@ -14,7 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+ARG UBI_VERSION=9
+FROM registry.access.redhat.com/ubi${UBI_VERSION}/ubi-minimal:latest
 
 ENV GOSU_VERSION=1.17
 RUN microdnf update -y && \

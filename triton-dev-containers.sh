@@ -28,66 +28,242 @@ set -euo pipefail
 image_repo=quay.io/triton-dev-containers
 image_tag=latest
 
+## Image versions
+ubi_version=9
+cuda_version=12-9
+rocm_version=6.4.4
+
+gitconfig_path="${HOME}/.gitconfig"
+hip_devices=${HIP_VISIBLE_DEVICES:-0}
+
 ## Jupyter notebook
 jupyter_notebook=false
 default_port=8888
 
 ## Image modifiers
-custom_llvm=false
-create_user=true
-debugging_tools=false
+dbg_tools=false
+max_jobs=$(nproc --all)
 
-gitconfig_path="${HOME}/.gitconfig"
-hip_devices=${HIP_VISIBLE_DEVICES:-0}
-
+# Container runtime command option arrays
 declare -a ctr_env_opts
 declare -a ctr_device_opts
 declare -a ctr_security_opts
 declare -a ctr_volume_opts
 
 usage() {
-	printf "Usage: %s [OPTION]... DEVICE\n" "$(basename "$0")"
-	printf "\tDEVICE\t\tTarget device, [amd | cpu | nvidia].\n"
+	printf "Usage: %s [OPTION]... IMAGE_NAME\n" "$(basename "$0")"
+	printf "\tIMAGE_NAME\t\tImage name\n"
 	printf "Options\n"
+	printf "\t-d\t\tInstall debugging and analysis tools (i.e. NVIDIA Nsight)\n"
+	printf "\t-p [AUTO|PORT]\tExpose the specified port for the Jupyter notebook server (AUTO: %d)\n" "$default_port"
+	printf "\t-j MAX_JOBS\tMaximum number of jobs to use when building Triton/PyTorch/vLLM (Default: %d)\n" "$max_jobs"
 	printf "\t-r IMAGE_REPO\tImage repository (Default: %s)\n" "$image_repo"
-	printf "\t-t IMAGE_TAG\tImage tag (Default: %s).\n" "$image_tag"
-	printf "\t-s PATH\t\tA local project source directory.\n"
+	printf "\t-s SOURCE\tLocal source directories to mount as volumes\n"
+	printf "\t\t\t\tLLVM=/path/to/llvm/source\n"
+	printf "\t\t\t\tTORCH=/path/to/torch/source\n"
 	printf "\t\t\t\tTRITON=/path/to/triton/source\n"
-	printf "\t-u PATH\t\t/path/to/user/directory\n"
-	printf "\t-j [AUTO|PORT]\tRun a Jupyter Notebook server.\n"
-	printf "\t\t\t\t(Default: %d)\n" "$default_port"
-	printf "\t-d\t\tEnable Triton debugging tools, i.e. profiling.\n"
-	printf "\t-l\t\tUse a custom LLVM.\n"
+	printf "\t\t\t\tUSER=/path/to/user/source\n"
+	printf "\t\t\t\tVLLM=/path/to/vllm/source\n"
+	printf "\t-t IMAGE_TAG\tImage tag (Default: %s)\n" "$image_tag"
+	printf "\t-u USERNAME\tUsername to use inside the image\n"
 	printf "\t-h\t\tPrint usage\n"
 	printf "\t-v\t\tVerbose\n"
+}
+
+set_container_runtime() {
+	if command -v podman &>/dev/null; then
+		ctr_cmd=podman
+	elif command -v docker &>/dev/null; then
+		ctr_cmd=docker
+	else
+		echo "Could not find the podman or docker container runtime."
+		echo "Please install one of them."
+		exit 1
+	fi
+}
+
+setup_volumes() {
+	# Set selinux volume flag if enforcing
+	if command -v getenforce &>/dev/null && [ "$(getenforce 2>/dev/null)" == "Enforcing" ]; then
+		selinux_flag=:z
+	fi
+
+	# Custom LLVM source code path
+	if [ -n "${llvm_path:-}" ]; then
+		if [ -d "${llvm_path:-}" ]; then
+			ctr_volume_opts+=("-v ${llvm_path}:/workspace/llvm-project${selinux_flag:-}")
+			ctr_env_opts+=("-e INSTALL_LLVM=source")
+		else
+			echo "Specified LLVM path does not exist."
+			exit 1
+		fi
+	fi
+
+	# Triton Lang source code path
+	if [ -n "${triton_path:-}" ]; then
+		if [ -d "${triton_path:-}" ]; then
+			ctr_volume_opts+=("-v ${triton_path}:/workspace/triton${selinux_flag:-}")
+			ctr_env_opts+=("-e INSTALL_TRITON=source")
+		else
+			echo "Specified triton path does not exist."
+			exit 1
+		fi
+	fi
+
+	# PyTorch source code path
+	if [ -n "${torch_path:-}" ]; then
+		if [ -d "${torch_path:-}" ]; then
+			ctr_volume_opts+=("-v ${torch_path}:/workspace/torch${selinux_flag:-}")
+			ctr_env_opts+=("-e INSTALL_TORCH=source")
+		else
+			echo "Specified torch path does not exist."
+			exit 1
+		fi
+	fi
+
+	# vLLM source code path
+	if [ -n "${vllm_path:-}" ]; then
+		if [ -d "${vllm_path:-}" ]; then
+			ctr_volume_opts+=("-v ${vllm_path}:/workspace/vllm${selinux_flag:-}")
+			ctr_env_opts+=("-e INSTALL_VLLM=source")
+		else
+			echo "Specified vllm path does not exist."
+			exit 1
+		fi
+	fi
+
+	# Add a user path if one is specified (should verify it exists)
+	if [ -n "${user_path:-}" ]; then
+		if [ -d "${user_path:-}" ]; then
+			ctr_volume_opts+=("-v ${user_path}:/workspace/user${selinux_flag:-}")
+		else
+			echo "Specified user path does not exist."
+			exit 1
+		fi
+	fi
+
+	# User management for non-Mac OS's
+	if [ "$(uname -s)" != "Darwin" ] && ! getent passwd "$USER" >/dev/null && [ -n "${username:-}" ]; then
+		ctr_volume_opts+=("-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro")
+	fi
+
+	# Gitconfig
+	if [ -f "${gitconfig_path:-}" ]; then
+		ctr_volume_opts+=("-v ${gitconfig_path}:/etc/gitconfig${selinux_flag:-}")
+	fi
+}
+
+set_device_opts() {
+	case $target_device in
+	amd)
+		ctr_device_opts+=(
+			"--device=/dev/kfd"
+			"--device=/dev/dri"
+		)
+		ctr_security_opts+=(
+			"--cap-add=SYS_PTRACE"
+			"--group-add=video"
+			"--ipc=host"
+			"--security-opt seccomp=unconfined"
+		)
+		ctr_env_opts+=(
+			"-e HIP_VISIBLE_DEVICES=${hip_devices}"
+		)
+
+		image_name=${image_name}-${rocm_version}
+		;;
+	nvidia)
+		if command -v nvidia-ctk >/dev/null 2>&1 && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"; then
+			ctr_device_opts+=("--device nvidia.com/gpu=all")
+		else
+			ctr_device_opts+=("--runtime=nvidia --gpus=all")
+		fi
+
+		ctr_security_opts+=("--security-opt label=disable")
+
+		if [ "$dbg_tools" = "true" ]; then
+			ctr_env_opts+=(
+				"-e INSTALL_TOOLS=true"
+			)
+
+			ctr_security_opts+=(
+				"--privileged"
+				"--cap-add=SYS_ADMIN"
+			)
+
+			if [ -n "${DISPLAY:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+				ctr_env_opts+=(
+					"-e DISPLAY=${DISPLAY}"
+					"-e WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
+					"-e XDG_RUNTIME_DIR=/tmp"
+				)
+				ctr_volume_opts+=(
+					"-v ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/tmp/${WAYLAND_DISPLAY}:ro"
+				)
+			else
+				echo "WARNING: No DISPLAY or WAYLAND_DISPLAY configured"
+			fi
+		fi
+
+		image_name=${image_name}-${cuda_version}
+		;;
+	esac
+}
+
+set_user_args() {
+	if [ -n "${username:-}" ] && [ "${username:-}" != "root" ]; then
+		ctr_args=(
+			"-e USER=$username"
+			"-e USER_UID=$(id -u "$USER")"
+			"-e USER_GID=$(id -g "$USER")"
+		)
+	elif [ "$(basename "$ctr_cmd")" = "docker" ]; then
+		ctr_args=(
+			"--user $(id -u):$(id -g)"
+		)
+	elif [ "$(basename "$ctr_cmd")" = "podman" ]; then
+		ctr_args=(
+			"--user $USER"
+		)
+	fi
 }
 
 ##
 ## MAIN
 ##
-while getopts "r:t:s:u:j:dlhv" opt; do
+
+while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 	case "$opt" in
-	r)
-		image_repo=$OPTARG
+	c)
+		remote_connection=$OPTARG
 		;;
-	t)
-		image_tag=$OPTARG
+	d)
+		dbg_tools=true
 		;;
-	s)
+	j)
+		max_jobs=$OPTARG
+		;;
+	o)
 		case "${OPTARG/=*/}" in
-		triton | TRITON)
-			triton_path="${OPTARG/*=/}"
+		ubi_version | UBI_VERSION)
+			ubi_version="${OPTARG/*=/}"
+			;;
+		cuda_version | CUDA_VERSION)
+			cuda_version="${OPTARG/*=/}"
+			;;
+		rocm_version | ROCM_VERSION)
+			rocm_version="${OPTARG/*=/}"
+			;;
+		gitconfig | GITCONFIG)
+			gitconfig_path="${OPTARG/*=/}"
 			;;
 		*)
-			echo "Unknown source path ${OPTARG}."
+			echo "Unknown option ${OPTARG}."
 			exit 1
 			;;
 		esac
 		;;
-	u)
-		user_path=$OPTARG
-		;;
-	j)
+	p)
 		jupyter_notebook=true
 		if [ "${OPTARG^^}" = "AUTO" ]; then
 			jupyter_notebook_port=$default_port
@@ -95,11 +271,37 @@ while getopts "r:t:s:u:j:dlhv" opt; do
 			jupyter_notebook_port=$OPTARG
 		fi
 		;;
-	d)
-		debugging_tools=true
+	r)
+		image_repo=$OPTARG
 		;;
-	l)
-		custom_llvm=true
+	s)
+		case "${OPTARG/=*/}" in
+		llvm | LLVM)
+			llvm_path="${OPTARG/*=/}"
+			;;
+		triton | TRITON)
+			triton_path="${OPTARG/*=/}"
+			;;
+		torch | TORCH)
+			torch_path="${OPTARG/*=/}"
+			;;
+		vllm | VLLM)
+			vllm_path="${OPTARG/*=/}"
+			;;
+		user | USER)
+			user_path="${OPTARG/*=/}"
+			;;
+		*)
+			echo "Unknown source path ${OPTARG}."
+			exit 1
+			;;
+		esac
+		;;
+	t)
+		image_tag=$OPTARG
+		;;
+	u)
+		username=$OPTARG
 		;;
 	h)
 		usage
@@ -125,134 +327,40 @@ if [ -z "${1:-}" ]; then
 fi
 
 image_name="${1:-}"
+target_device=
+
+##
+## Command Configuration
+##
 
 # Container Runtime
-if command -v podman &>/dev/null; then
-	ctr_cmd=podman
-elif command -v docker &>/dev/null; then
-	ctr_cmd=docker
-else
-	echo "Could not find the podman or docker container runtime."
-	echo "Please install one of them."
-	exit 1
-fi
-
-# Set selinux volume flag if enforcing
-if [ "$(getenforce 2>/dev/null)" == "Enforcing" ]; then
-	selinux_flag=:z
-fi
-
-# Get latest PyTorch release version
-torch_version=$(curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
-
-echo "Running container image: ${image_repo}/${image_name}:${image_tag} with ${ctr_cmd}"
+set_container_runtime
 
 # Setup Volumes
-## Add a local Triton source path if one exists
-if [ -n "${triton_path:-}" ]; then
-	ctr_volume_opts+=("-v ${triton_path}:/workspace/triton${selinux_flag:-}")
-fi
+setup_volumes
 
-## Add a user path if one is specified (should verify it exists)
-if [ -n "${user_path:-}" ]; then
-	ctr_volume_opts+=("-v ${user_path}:/workspace/user${selinux_flag:-}")
-fi
+# Device specific arguments (AMD, NVIDIA, etc)
+set_device_opts
 
-## User management for non-Mac OS's
-if [ "$(uname -s)" != "Darwin" ] && ! getent passwd "$USER" >/dev/null && [ "$create_user" = "false" ]; then
-	ctr_volume_opts+=("-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro")
-fi
-
-## Gitconfig
-if [ -f "${gitconfig_path:-}" ]; then
-	ctr_volume_opts+=("-v ${gitconfig_path}:/etc/gitconfig${selinux_flag:-}")
-fi
-
-## Device specific arguments (AMD, NVIDIA, etc)
-case $image_name in
-amd)
-	ctr_device_opts+=(
-		"--device=/dev/kfd"
-		"--device=/dev/dri"
-	)
-	ctr_security_opts+=(
-		"--cap-add=SYS_PTRACE"
-		"--group-add=video"
-		"--ipc=host"
-		"--security-opt seccomp=unconfined"
-	)
-	ctr_env_opts+=(
-		"-e HIP_VISIBLE_DEVICES=${hip_devices}"
-	)
-	;;
-nvidia)
-	if command -v nvidia-ctk >/dev/null 2>&1 && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"; then
-		ctr_device_opts+=("--device nvidia.com/gpu=all")
-	else
-		ctr_device_opts+=("--runtime=nvidia --gpus=all")
-	fi
-
-	ctr_security_opts+=("--security-opt label=disable")
-
-	if [ "$debugging_tools" = "true" ]; then
-		ctr_env_opts+=(
-			"-e DISPLAY=${DISPLAY}"
-			"-e WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
-			"-e XDG_RUNTIME_DIR=/tmp"
-			"-e INSTALL_NSIGHT=true"
-		)
-		ctr_security_opts+=(
-			"--privileged"
-			"--cap-add=SYS_ADMIN"
-		)
-		ctr_volume_opts+=(
-			"-v ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/tmp/${WAYLAND_DISPLAY}:ro"
-		)
-	fi
-	;;
-esac
-
-## Runtime Arguments
+# Runtime Arguments
 if [ "$(basename "$ctr_cmd")" = "podman" ]; then
 	ctr_security_opts+=("--userns=keep-id")
 fi
 
-## Jupyter Notebook
-if [ "$jupyter_notebook" = "true" ]; then
-	ctr_port_opt="-p ${jupyter_notebook_port}:${jupyter_notebook_port}"
-	ctr_env_opts+=(
-		"-e DEMO_TOOLS=$jupyter_notebook"
-		"-e NOTEBOOK_PORT=$jupyter_notebook_port"
-	)
-fi
+# Jupyter Notebook
+ctr_port_opt="-p ${jupyter_notebook_port:-$default_port}:${jupyter_notebook_port:-$default_port}"
+ctr_env_opts+=("-e NOTEBOOK_PORT=${jupyter_notebook_port:-$default_port}")
 
-## Environment Arguments
-ctr_env_opts=(
+# Environment Arguments
+# "-e TORCH_VERSION=$torch_version"
 ctr_env_opts+=(
-	"-e USERNAME=$USER"
-	"-e TORCH_VERSION=$torch_version"
-	"-e CUSTOM_LLVM=$custom_llvm"
+	"-e MAX_JOBS=$max_jobs"
 )
 
-## Execution
-if [ "$create_user" = "true" ]; then
-	ctr_args=(
-		"-e CREATE_USER=$create_user"
-		"-e USER_UID=$(id -u "$USER")"
-		"-e USER_GID=$(id -g "$USER")"
-	)
-elif [ "$(basename "$ctr_cmd")" = "docker" ]; then
-	ctr_args=(
-		"--user $(id -u):$(id -g)"
-	)
-elif [ "$(basename "$ctr_cmd")" = "podman" ]; then
-	ctr_args=(
-		"--user $USER"
-	)
-fi
+# User args
+set_user_args
 
 ctr_args+=(
-	"${ctr_env_opts[@]}"
 	"${ctr_env_opts[@]:-}"
 	"${ctr_device_opts[@]:-}"
 	"${ctr_port_opt:-}"
@@ -260,5 +368,10 @@ ctr_args+=(
 	"${ctr_volume_opts[@]:-}"
 )
 
-echo "$ctr_cmd run -ti ${ctr_args[*]} ${image_repo}/${image_name}:${image_tag} bash"
-$ctr_cmd run -ti ${ctr_args[@]} "${image_repo}/${image_name}:${image_tag}" bash
+if [ -n "${remote_connection:-}" ]; then
+	ctr_connection="-r -c $remote_connection"
+fi
+
+printf "Running container image: %s/%s:%s with %s\n" "$image_repo" "$image_name" "$image_tag" "$ctr_cmd"
+printf "%s %s run -ti %s %s/%s:%s bash\n" "$ctr_cmd" "${ctr_connection:-}" "${ctr_args[*]}" "$image_repo" "$image_name" "$image_tag"
+$ctr_cmd ${ctr_connection:-} run -ti ${ctr_args[@]} "${image_repo}/${image_name}:${image_tag}" bash

@@ -1,3 +1,7 @@
+#! /bin/bash -e
+
+trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
+
 # Copyright (C) 2024-2025 Red Hat, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,25 +16,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0]\
+set -euo pipefail
 
-ARG UBI_VERSION=9
-FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
+./setup.sh
 
-ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=pip
-ARG INSTALL_TRITON=source
-ARG INSTALL_VLLM=skip
+if [ -n "${USER:-}" ]; then
+	exec gosu "$USER" "$@"
+fi
 
-USER 0
-
-ENV TRITON_CPU_BACKEND=1 \
-    INSTALL_TORCH=${INSTALL_TORCH} \
-    INSTALL_TRITON=${INSTALL_TRITON} \
-    INSTALL_VLLM=${INSTALL_VLLM}
-
-COPY hack/triton-gpu-check.py triton-gpu-check.py
-
-COPY scripts/entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["tail", "-f", "/dev/null"]
+exec "$@"

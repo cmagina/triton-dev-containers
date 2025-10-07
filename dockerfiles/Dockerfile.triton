@@ -13,58 +13,32 @@
 # limitations under the License.
 #
 # SPDX-License-Identifier: Apache-2.0
-ARG CUSTOM_LLVM=false
 
-FROM registry.access.redhat.com/ubi9/python-312 AS base
-ARG CUSTOM_LLVM
+ARG UBI_VERSION=9
+FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
+
+ARG CUDA_VERSION=12-9
+
+ARG INSTALL_LLVM=skip
+ARG INSTALL_TORCH=pip
+ARG INSTALL_TRITON=source
+ARG INSTALL_VLLM=skip
 
 USER 0
 
 RUN dnf -y update && \
-    dnf -y install clang cmake lld ninja-build openblas openblas-devel \
-    llvm llvm-libs libglvnd-opengl libomp libomp-devel libxkbfile \
-    qt5-qtwayland sudo xcb-util-cursor && \
-    dnf clean all
+    dnf -y install libglvnd-opengl libxkbfile \
+    qt5-qtwayland xcb-util-cursor && \
+    dnf clean all && rm -rf /var/cache/dnf
 
-# Stage for llvm-local-true
-FROM base AS llvm-local-true
-COPY --from=quay.io/triton-dev-containers/llvm:latest /install /llvm-project/install
+ENV CUDA_VERSION=$CUDA_VERSION \
+    INSTALL_LLVM=$INSTALL_LLVM \
+    INSTALL_TORCH=$INSTALL_TORCH \
+    INSTALL_TRITON=$INSTALL_TRITON \
+    INSTALL_VLLM=$INSTALL_VLLM
 
-# Stage for llvm-local-false
-FROM base AS llvm-local-false
-ENV TRITON_OFFLINE_BUILD=NO
-
-# Use intermediate stage selection
-FROM llvm-local-${CUSTOM_LLVM} AS final
-
-# Create the /workspace directory and set permissions
-RUN mkdir -p /workspace && \
-    python -m venv /workspace && \
-    echo "unset BASH_ENV PROMPT_COMMAND ENV" >> /workspace/bin/activate && \
-    chmod -R 777 /workspace
-
-# Create a symlink to the installed version of CUDA
-RUN ln -sf /usr/local/cuda-${CUDA_VERSION/-/.} /usr/local/cuda
-
-ENV BASH_ENV=/workspace/bin/activate \
-    ENV=/workspace/bin/activate \
-    PROMPT_COMMAND=". /workspace/bin/activate" \
-    PYTHON_VERSION=3.12 \
-    PATH=/workspace/bin:$PATH \
-    PYTHONUNBUFFERED=1 \
-    PIP_PREFIX=/workspace \
-    PYTHONPATH=/workspace/lib/python$PYTHON_VERSION/site-packages \
-    XDG_CACHE_HOME=/workspace \
-    TRITON_CACHE_DIR=/workspace/.triton/cache \
-    TRITON_HOME=/workspace/
-
-WORKDIR /workspace
-RUN echo 'export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-RUN echo "export MAX_JOBS=$(nproc --all)" >> "${HOME}"/.bashrc
-COPY --from=quay.io/triton-dev-containers/gosu /usr/local/bin/gosu /usr/local/bin/gosu
-COPY dockerfiles/user.sh user.sh
-COPY dockerfiles/entrypoint.sh /entrypoint.sh
-COPY hack/triton-gpu-check.py triton-gpu-check.py
 COPY examples/flash_attention_demo.ipynb flash_attention_demo.ipynb
+
+COPY scripts/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tail", "-f", "/dev/null"]
