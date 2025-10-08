@@ -61,10 +61,6 @@ install_jupyter_notebook() {
 	info "Installing Jupyter Notebook ..."
 	uv pip install jupyter
 
-	if [ "${INSTALL_TOOLS:-}" = "true" ]; then
-		uv pip install jupyterlab-nvidia-nsight nvtx
-	fi
-
 	if [ -f "${HOME}/.bashrc" ] && grep -q "start_jupyter()" "${HOME}/.bashrc"; then
 		info "start_jupyter function already exists in "${HOME}/.bashrc""
 	else
@@ -85,7 +81,7 @@ install_jupyter_notebook() {
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#s
+#
 # SPDX-License-Identifier: Apache-2.0]\
 set -euo pipefail
 	
@@ -118,9 +114,6 @@ EOF
 		${SUDO:-} dnf -y config-manager --add-repo \
 			https://developer.download.nvidia.com/compute/cuda/repos/rhel${UBI_VERSION}/x86_64/cuda-rhel${UBI_VERSION}.repo
 
-		# info "Installing NVIDIA SMI ..."
-		# ${SUDO:-} dnf -y install nvidia-driver-cuda
-
 		if [ "${INSTALL_TOOLS:-}" = "true" ]; then
 			info "Installing NVIDIA Nsight ..."
 			${SUDO:-} dnf -y install cublasmp cuda-cupti-${CUDA_VERSION} \
@@ -132,6 +125,8 @@ EOF
 			COMPUTE_VERSION=$(ls /opt/nvidia/nsight-compute)
 			${SUDO:-} alternatives --install /usr/local/bin/ncu ncu "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu" 100
 			${SUDO:-} alternatives --install /usr/local/bin/ncu-ui ncu-ui "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu-ui" 100
+
+			uv pip install jupyterlab-nvidia-nsight nvtx
 		fi
 	elif [ -n "${ROCM_VERSION:-}" ] && [ "${INSTALL_TOOLS:-}" = "true" ]; then
 		info "Installing ROCm Developer Tools ..."

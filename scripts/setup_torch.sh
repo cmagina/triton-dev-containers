@@ -115,7 +115,6 @@ install_pip() {
 
 	if [ -n "${ROCM_VERSION:-}" ]; then
 		hdr "Installing Torch ROCm ..."
-# 		torch_version=${TORCH_VERSION:-2.5.1}
 		torch_index_url="--index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION%.*}"
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 		hdr "Installing Torch CPU ..."

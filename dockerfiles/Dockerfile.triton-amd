@@ -34,11 +34,11 @@ RUN source /etc/os-release && \
 
 # Install the ROCm rpms
 RUN dnf -y install --nodocs --setopt=install_weak_deps=False \
-        amd-smi-lib \
-        miopen-hip \
-        rocm-core \
-        rocm-hip-libraries \
-        rocminfo && \
+    amd-smi-lib \
+    miopen-hip \
+    rocm-core \
+    rocm-hip-libraries \
+    rocminfo && \
     dnf clean all && rm -rf /var/cache/yum
 
 # Set environment variables for ROCm

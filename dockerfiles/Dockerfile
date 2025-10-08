@@ -51,7 +51,7 @@ RUN python${PYTHON_VERSION} -m pip install uv && \
     uv venv --python 3.12 --seed ${WORKSPACE} && \
     echo "unset BASH_ENV PROMPT_COMMAND ENV" >> ${WORKSPACE}/bin/activate && \
     chmod -R 777 ${WORKSPACE}
-    
+
 ENV BASH_ENV=${WORKSPACE}/bin/activate \
     CCACHE_DIR=${WORKSPACE}/.cache/ccache \
     ENV=${WORKSPACE}/bin/activate \

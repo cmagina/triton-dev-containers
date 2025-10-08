@@ -105,33 +105,33 @@ create_user() {
 	# Create user if it doesn't exist
 	if ! id -u "$USER" >/dev/null 2>&1; then
 		echo "Creating user $USER with UID $USER_ID and GID $GROUP_ID"
-		
+
 		# Create group if it doesn't exist
 		if ! getent group "$USER_GID" >/dev/null; then
-		  groupadd --gid "$USER_GID" "$USER"
+			groupadd --gid "$USER_GID" "$USER"
 		else # modify the name
-		  gname=$(getent group "$USER_GID" | cut -d: -f1)
-		  groupmod -g "$USER_GID" -n "$USER" "$gname"
+			gname=$(getent group "$USER_GID" | cut -d: -f1)
+			groupmod -g "$USER_GID" -n "$USER" "$gname"
 		fi
 
 		# Check if the UID is in use
 		if getent passwd "$USER_UID" >/dev/null; then
-		  echo "Warning: UID $USER_UID is already in use. Creating the user with UID $DEFAULT_UID instead." >&2
-		  USER_UID=$DEFAULT_UID
+			echo "Warning: UID $USER_UID is already in use. Creating the user with UID $DEFAULT_UID instead." >&2
+			USER_UID=$DEFAULT_UID
 		fi
 
 		# Create user if it doesn't exist
 		if ! getent passwd "$USER" >/dev/null; then
-		  useradd --uid "$USER_UID" --gid "$USER_GID" -m "$USER"
+			useradd --uid "$USER_UID" --gid "$USER_GID" -m "$USER"
 		fi
 
 		# Add current (arbitrary) user to /etc/passwd and /etc/group
 		if ! whoami >/dev/null 2>&1; then
-		  if [ -w /etc/passwd ]; then
-		    echo "update passwd file"
-		    echo "${USER:-user}:x:$(id -u):0:${USER:-user} user:${HOME}:/bin/bash" >> /etc/passwd
-		    echo "${USER:-user}:x:$(id -u):" >> /etc/group
-		  fi
+			if [ -w /etc/passwd ]; then
+				echo "update passwd file"
+				echo "${USER:-user}:x:$(id -u):0:${USER:-user} user:${HOME}:/bin/bash" >>/etc/passwd
+				echo "${USER:-user}:x:$(id -u):" >>/etc/group
+			fi
 		fi
 
 		# Fix up permissions
