@@ -16,53 +16,28 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0]\
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
 CLONED=0
 
 WORKSPACE=${WORKSPACE:-${HOME}}
 
-TRITON_DIR=${WORKSPACE}/triton
-TRITON_REPO=https://github.com/triton-lang/triton.git
-
-get_cols() {
-	read rows cols < <(stty size)
-	echo $cols
-}
-
-hdr() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v hdr_padding '#%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v hdr_line '#%.0s' {$(seq 1 $((2 * ${#hdr_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$hdr_line"
-	printf "%s %s %s\n" "$hdr_padding" "$msg" "$hdr_padding"
-	printf "%s\n" "$hdr_line"
-}
-
-info() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v info_padding '=%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v info_line '=%.0s' {$(seq 1 $((2 * ${#info_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$info_line"
-	printf "%s %s %s\n" "$info_padding" "$msg" "$info_padding"
-	printf "%s\n" "$info_line"
-}
-
 setup_src() {
+	# if [ -n "${ROCM_VERSION:-}" ]; then
+	# 	TRITON_DIR=${WORKSPACE}/triton-rocm
+	# 	TRITON_REPO=https://github.com/ROCm/triton.git
+	# 	TRITON_GITREF="57c693b6"
 	if [ "${TRITON_CPU_BACKEND:-0}" -eq 1 ]; then
 		TRITON_DIR=${WORKSPACE}/triton-cpu
 		TRITON_REPO=https://github.com/triton-lang/triton-cpu.git
+	else
+		TRITON_DIR=${WORKSPACE}/triton
+		TRITON_REPO=https://github.com/triton-lang/triton.git
 	fi
 
 	if [ ! -d "$TRITON_DIR" ]; then
-		info "Cloning the triton repo\n$TRITON_REPO to $TRITON_DIR ..."
+		echo "# Cloning the triton repo $TRITON_REPO to $TRITON_DIR ..."
 		git clone "$TRITON_REPO" "$TRITON_DIR"
 		if [ ! -d "$TRITON_DIR" ]; then
 			echo "$TRITON_DIR not found. ERROR Cloning repository..."
@@ -71,7 +46,7 @@ setup_src() {
 			CLONED=1
 		fi
 	else
-		info "Triton repo already present, not cloning ..."
+		echo "# Triton repo already present, not cloning ..."
 	fi
 
 	export TRITON_DIR
@@ -86,7 +61,7 @@ setup_src() {
 			git checkout $TRITON_GITREF
 		fi
 
-		info "Installing pre-commit dependencies ..."
+		echo "# Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -95,7 +70,7 @@ setup_src() {
 }
 
 install_build_deps() {
-	info "Installing triton build dependencies ..."
+	echo "# Installing triton build dependencies ..."
 	pushd "$TRITON_DIR" 1>/dev/null || exit 1
 
 	if [ -f python/requirements.txt ]; then
@@ -114,11 +89,11 @@ EOF
 }
 
 install_deps() {
-	info "Installing triton dependencies ..."
+	echo "# Installing triton dependencies ..."
 	uv pip install cmake ctypeslib2 matplotlib ninja \
 		numpy pandas pybind11 pytest pyyaml scipy tabulate wheel
 
-	info "Installing triton proton dependencies ..."
+	echo "# Installing triton proton dependencies ..."
 	uv pip install llnl-hatchet
 }
 
@@ -135,42 +110,65 @@ install_src() {
 	popd 1>/dev/null
 }
 
-install_pip() {
-	uv pip install triton
+install_release() {
+	if [ -n "${TORCH_BACKEND:-}" ]; then
+		echo "# Using specified torch backend, ${TORCH_BACKEND}"
+	elif [ -n "${ROCM_VERSION:-}" ]; then
+		echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+		TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+		echo "# Using the torch CPU backend"
+		TORCH_BACKEND=cpu
+	elif [ -n "${CUDA_VERSION:-}" ]; then
+		echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+		TORCH_BACKEND=cu${CUDA_VERSION//-/}
+	else
+		echo "# Using the torch auto backend"
+		TORCH_BACKEND=auto
+	fi
+
+	if [ -n "${TRITON_VERSION:-}" ]; then
+		echo "# Specified Triton version ${TRITON_VERSION}"
+		TRITON_VERSION="==$TRITON_VERSION"
+	fi
+
+	uv pip install triton${TRITON_VERSION:-} \
+		--torch-backend=${TORCH_BACKEND}
+
+	# Fix up LD_LIBRARY_PATH for CUDA
+	./ldpretend.sh
 }
 
 usage() {
 	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload Triton's source and install the build deps\n"
-	printf "\tinstall\t\tBuild and install Triton\n"
-	printf "\tpip\t\tInstall Triton using pip\n"
+	printf "\tsource\t\tDownload Triton's source (if needed) and install the build deps\n"
+	printf "\tinstall\t\tBuild and install Triton from source\n"
+	printf "\trelease\t\tInstall Triton\n"
 }
 
 ##
 ## Main
 ##
 
-if [ $# -lt 1 ]; then
-	usage
-	exit 1
-fi
-
 COMMAND=${1,,}
 
 case $COMMAND in
 source)
-	hdr "Setting up the environment for building Triton ..."
+	echo "## Setting up the environment for building Triton from source..."
 	setup_src
 	install_build_deps
 	install_deps
 	;;
 install)
-	hdr "Building and installing Triton ..."
+	echo "## Building and installing Triton from source ..."
+	setup_src
+	install_build_deps
 	install_src
+	install_deps
 	;;
-pip)
-	hdr "Installing Triton from PyPi ..."
-	install_pip
+release)
+	echo "## Installing Triton ..."
+	install_release
 	install_deps
 	;;
 *)

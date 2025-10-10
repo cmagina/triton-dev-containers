@@ -16,7 +16,7 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0]\
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
 CLONED=0
@@ -26,38 +26,20 @@ WORKSPACE=${WORKSPACE:-${HOME}}
 TORCH_DIR=${WORKSPACE}/torch
 TORCH_REPO=https://github.com/pytorch/pytorch.git
 
-get_cols() {
-	read rows cols < <(stty size)
-	echo $cols
-}
+TORCH_VISION_DIR=${WORKSPACE}/torchvision
+TORCH_VISION_REPO=https://github.com/pytorch/vision.git
 
-hdr() {
-	local msg="$1"
-	local cols=$(get_cols)
+TORCH_INDEX_URL_BASE=https://download.pytorch.org/whl
+TORCH_HDR_MSG="Installing Torch"
 
-	printf -v hdr_padding '#%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v hdr_line '#%.0s' {$(seq 1 $((2 * ${#hdr_padding} + ${#msg} + 2)))}
+setup_torch_src() {
+	if [ -n "${ROCM_VERSION:-}" ]; then
+		TORCH_REPO=https://github.com/ROCm/pytorch.git
+		TORCH_GITREF="1c57644d"
+	fi
 
-	printf "%s\n" "$hdr_line"
-	printf "%s %s %s\n" "$hdr_padding" "$msg" "$hdr_padding"
-	printf "%s\n" "$hdr_line"
-}
-
-info() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v info_padding '=%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v info_line '=%.0s' {$(seq 1 $((2 * ${#info_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$info_line"
-	printf "%s %s %s\n" "$info_padding" "$msg" "$info_padding"
-	printf "%s\n" "$info_line"
-}
-
-setup_src() {
 	if [ ! -d "$TORCH_DIR" ]; then
-		info "Cloning the Torch repo\n$TORCH_REPO to $TORCH_DIR ..."
+		echo "# Cloning the Torch repo $TORCH_REPO to $TORCH_DIR ..."
 		git clone "$TORCH_REPO" "$TORCH_DIR"
 		if [ ! -d "$TORCH_DIR" ]; then
 			echo "$TORCH_DIR not found. ERROR Cloning repository..."
@@ -66,7 +48,7 @@ setup_src() {
 			CLONED=1
 		fi
 	else
-		info "Torch repo already present, not cloning ..."
+		echo "# Torch repo already present, not cloning ..."
 	fi
 
 	pushd "$TORCH_DIR" 1>/dev/null || exit 1
@@ -79,7 +61,47 @@ setup_src() {
 			git checkout $TORCH_GITREF
 		fi
 
-		info "Installing pre-commit dependencies ..."
+		echo "# Installing pre-commit dependencies ..."
+		uv pip install pre-commit
+		pre-commit install
+	fi
+
+	if command ccache &>/dev/null; then
+		export USE_CCACHE=1
+	fi
+
+	popd 1>/dev/null
+}
+
+setup_torchvision_src() {
+	if [ -n "${ROCM_VERSION:-}" ]; then
+		TORCH_VISION_GITREF="v0.23.0"
+	fi
+
+	if [ ! -d "$TORCH_VISION_DIR" ]; then
+		echo "# Cloning the Torch repo $TORCH_VISION_REPO to $TORCH_VISION_DIR ..."
+		git clone "$TORCH_VISION_REPO" "$TORCH_VISION_DIR"
+		if [ ! -d "$TORCH_VISION_DIR" ]; then
+			echo "$TORCH_VISION_DIR not found. ERROR Cloning repository..."
+			exit 1
+		else
+			CLONED=1
+		fi
+	else
+		echo "# Torch repo already present, not cloning ..."
+	fi
+
+	pushd "$TORCH_VISION_DIR" 1>/dev/null || exit 1
+
+	if [ "$CLONED" -eq 1 ]; then
+		git submodule sync
+		git submodule update --init --recursive
+
+		if [ -n "${TORCH_VISION_GITREF:-}" ]; then
+			git checkout $TORCH_VISION_GITREF
+		fi
+
+		echo "# Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -95,7 +117,7 @@ install_build_deps() {
 	pushd "$TORCH_DIR" 1>/dev/null || exit 1
 
 	if [ -f requirements.txt ]; then
-		info "Installing Torch dependencies ..."
+		echo "# Installing Torch dependencies ..."
 		# Run this command from the PyTorch directory after cloning the source code using the “Get the PyTorch Source“ section above
 		uv pip install --group dev
 		uv pip install mkl-static mkl-include
@@ -109,112 +131,77 @@ install_build_deps() {
 	popd 1>/dev/null
 }
 
-install_pip() {
-	local torch_version
-	local torch_index_url
-
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		hdr "Installing Torch ROCm ..."
-		torch_index_url="--index-url https://download.pytorch.org/whl/rocm${ROCM_VERSION%.*}"
-	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
-		hdr "Installing Torch CPU ..."
-		torch_index_url="--index-url https://download.pytorch.org/whl/cpu"
-	else
-		hdr "Installing Torch ..."
-	fi
-
-	if [ -n "${TORCH_VERSION:-}" ]; then
-		torch_version="==$TORCH_VERSION"
-	fi
-
-	uv pip install torch${torch_version:-} ${torch_index_url:-}
-}
-
-ldpretend() {
-	if [ -d "${PYTHONPATH}/nvidia" ]; then
-		info "Fixing the system not seeing the NVIDIA CUDA libraries installed from pip ..."
-		cuda_libs=($(find ${PYTHONPATH}/nvidia -iname '*.so*'))
-
-		for lib in ${cuda_libs[*]}; do
-			baselib="$(basename "$lib")"
-			libdir=$(dirname "$lib")
-
-			while
-				libext="${baselib##*.}"
-				[ "$libext" != "so" ]
-			do
-				baselib="$(basename "$baselib" ."$libext")"
-			done
-
-			if [ ! -e "$libdir/$baselib" ]; then
-				ln -vs "$lib" "$libdir/$baselib"
-			fi
-		done
-
-		info "Adding the NVIDIA CUDA libraries to LD_LIBRARY_PATH ..."
-		cuda_dirs=($(find "${PYTHONPATH}/nvidia" -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__'))
-		printf -v cuda_ld_paths '%s/lib:' "${cuda_dirs[@]}"
-		if [ -z "${LD_LIBRARY_PATH:-}" ]; then
-			LD_LIBRARY_PATH=${cuda_ld_paths%:}
-		else
-			LD_LIBRARY_PATH=${cuda_ld_paths}${LD_LIBRARY_PATH}
-		fi
-		echo export LD_LIBRARY_PATH=${LD_LIBRARY_PATH} >>${HOME}/.bashrc
-	fi
-}
-
-install_nightly() {
-	local index_url
-
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		hdr "Installing Torch nightly ROCm wheel ..."
-		index_url=https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION%.*}
-	elif [ -n "${CUDA_VERSION:-}" ]; then
-		hdr "Installing Torch nightly CUDA wheel ..."
-		index_url=https://download.pytorch.org/whl/nightly/cu${CUDA_VERSION//-/}
-	else
-		hdr "Installing Torch nightly CPU wheel ..."
-		index_url=https://download.pytorch.org/whl/nightly/cpu
-	fi
-
-	uv pip install --pre torch torchvision \
-		--index-url "$index_url"
-}
-
 usage() {
 	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload Torch's source and install the build deps\n"
-	printf "\tpip\t\tInstall the Torch using pip\n"
-	printf "\tnightly\t\tInstall the Torch nightly build using pip\n"
+	printf "\tsource\t\tDownload Torch's source (if needed) and install the build deps\n"
+	printf "\trelease\t\tInstall Torch\n"
+	printf "\tnightly\t\tInstall the Torch nightly wheel\n"
+	printf "\ttest\t\tInstall the Torch test wheel\n"
 }
 
 ##
 ## Main
 ##
 
-if [ $# -lt 1 ]; then
-	usage
-	exit 1
-fi
-
 COMMAND=${1,,}
 
 case $COMMAND in
 source)
-	hdr "Setting up the environment for building Torch ..."
-	setup_src
+	echo "## Setting up the environment for building Torch ..."
+	setup_torch_src
+	setup_torchvision_src
 	install_build_deps
-	ldpretend
+	exit $?
 	;;
-pip)
-	install_pip
-	ldpretend
+release)
+	TORCH_HDR_MSG="${TORCH_HDR_MSG} release"
 	;;
 nightly)
-	install_nightly
+	TORCH_HDR_MSG="${TORCH_HDR_MSG} nightly"
+	TORCH_INDEX_URL_BUILD=/nightly
+	;;
+test)
+	TORCH_HDR_MSG="${TORCH_HDR_MSG} test"
+	TORCH_INDEX_URL_BUILD=/test
 	;;
 *)
 	usage
 	exit 1
 	;;
 esac
+
+echo "## ${TORCH_HDR_MSG} ..."
+if [ -n "${TORCH_INDEX_URL:-}" ]; then
+	echo "# Using the specified index, ${TORCH_INDEX_URL}"
+	TORCH_INDEX_URL="--index-url  ${TORCH_INDEX_URL}"
+else
+	TORCH_INDEX_URL="--index-url ${TORCH_INDEX_URL_BASE}${TORCH_INDEX_URL_BUILD:-}"
+fi
+
+if [ -n "${TORCH_BACKEND:-}" ]; then
+	echo "# Using specified torch backend, ${TORCH_BACKEND}"
+elif [ -n "${ROCM_VERSION:-}" ]; then
+	echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+	echo "# Using the torch CPU backend"
+	TORCH_BACKEND=cpu
+elif [ -n "${CUDA_VERSION:-}" ]; then
+	echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+	TORCH_BACKEND=cu${CUDA_VERSION//-/}
+else
+	echo "# Using the torch auto backend"
+	TORCH_BACKEND=auto
+fi
+
+if [ -n "${TORCH_VERSION:-}" ]; then
+	echo "# Specified Torch version ${TORCH_VERSION}"
+	TORCH_VERSION="==${TORCH_VERSION}"
+fi
+
+uv pip install torch${TORCH_VERSION:-} \
+	--torch-backend=${TORCH_BACKEND} \
+	${TORCH_INDEX_URL}
+
+# Fix up LD_LIBRARY_PATH for CUDA
+./ldpretend.sh

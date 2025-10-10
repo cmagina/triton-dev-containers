@@ -16,7 +16,7 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0]\
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
 CLONED=0
@@ -26,38 +26,20 @@ WORKSPACE=${WORKSPACE:-${HOME}}
 VLLM_DIR=${WORKSPACE}/vllm
 VLLM_REPO=https://github.com/vllm-project/vllm.git
 
-get_cols() {
-	read rows cols < <(stty size)
-	echo $cols
-}
+FA_DIR=${WORKSPACE}/flash-attention
+FA_REPO="https://github.com/Dao-AILab/flash-attention.git"
+FA_GITREF="0e60e394"
 
-hdr() {
-	local msg="$1"
-	local cols=$(get_cols)
+AITER_DIR=${WORKSPACE}/aiter
+AITER_REPO="https://github.com/ROCm/aiter.git"
+AITER_GITREF="eef23c7f"
 
-	printf -v hdr_padding '#%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v hdr_line '#%.0s' {$(seq 1 $((2 * ${#hdr_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$hdr_line"
-	printf "%s %s %s\n" "$hdr_padding" "$msg" "$hdr_padding"
-	printf "%s\n" "$hdr_line"
-}
-
-info() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v info_padding '=%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v info_line '=%.0s' {$(seq 1 $((2 * ${#info_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$info_line"
-	printf "%s %s %s\n" "$info_padding" "$msg" "$info_padding"
-	printf "%s\n" "$info_line"
-}
+VLLM_INDEX_URL_BASE=https://wheels.vllm.ai
+VLLM_HDR_MSG="Installing vLLM"
 
 setup_src() {
 	if [ ! -d "$VLLM_DIR" ]; then
-		info "Cloning the vLLM repo\n$VLLM_REPO to $VLLM_DIR ..."
+		echo "# Cloning the vLLM repo $VLLM_REPO to $VLLM_DIR ..."
 		git clone "$VLLM_REPO" "$VLLM_DIR"
 		if [ ! -d "$VLLM_DIR" ]; then
 			echo "$VLLM_DIR not found. ERROR Cloning repository..."
@@ -66,7 +48,7 @@ setup_src() {
 			CLONED=1
 		fi
 	else
-		info "vLLM repo already present, not cloning ..."
+		echo "# vLLM repo already present, not cloning ..."
 	fi
 
 	pushd "$VLLM_DIR" 1>/dev/null || exit 1
@@ -79,7 +61,7 @@ setup_src() {
 			git checkout $VLLM_GITREF
 		fi
 
-		info "Installing pre-commit dependencies ..."
+		echo "# Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -91,7 +73,7 @@ install_build_deps() {
 	pushd "$VLLM_DIR" 1>/dev/null || exit 1
 
 	if [ -n "${ROCM_VERSION:-}" ]; then
-		info "Installing ROCm build dependencies ..."
+		echo "# Installing ROCm build dependencies ..."
 		if [ -e "/opt/rocm/share/amd_smi" ]; then
 			uv pip install /opt/rocm/share/amd_smi
 		fi
@@ -107,54 +89,34 @@ install_build_deps() {
 			uv pip install -r requirements/rocm.txt
 		fi
 
-		tee -a $HOME/.bashrc >>EOF
+		tee -a ${HOME}/.bashrc >>EOF
 
 		# Build vLLM for MI210/MI250/MI300.
 		export PYTORCH_ROCM_ARCH="gfx90a;gfx942"
 		EOF
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		info "Installing CUDA build dependencies ..."
+		echo "# Installing CUDA build dependencies ..."
 		${SUDO:-} dnf -y install cuda-toolkit-${CUDA_VERSION}
 	fi
 
 	if [ -f requirements/build.txt ]; then
-		info "Installing vLLM dependencies ..."
+		echo "# Installing vLLM dependencies ..."
 		uv pip install -r requirements/build.txt
 	fi
 
 	popd 1>/dev/null
 }
 
-install_pip() {
-	if [ "${NVIDIA:-}" = "true" ]; then
-		hdr "Installing CUDA vLLM wheel ..."
-		uv pip install vllm \
-			--extra-index-url https://download.pytorch.org/whl/cu${CUDA_VERSION//-/}
-	fi
-}
-
-install_nightly() {
-	hdr "Installing vLLM nightly ..."
-	uv pip install -U vllm \
-		--torch-backend=auto \
-		--extra-index-url https://wheels.vllm.ai/nightly
-}
-
 usage() {
 	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload vLLM's source and install the build deps\n"
-	printf "\tpip\t\tInstall the vLLM using pip\n"
-	printf "\tnightly\t\tInstall the vLLM nightly build using pip\n"
+	printf "\tsource\t\tDownload vLLM's source (if needed) and install the build deps\n"
+	printf "\trelease\t\tInstall vLLM\n"
+	printf "\tnightly\t\tInstall the vLLM nightly wheel\n"
 }
 
 ##
 ## Main
 ##
-
-if [ $# -lt 1 ]; then
-	usage
-	exit 1
-fi
 
 COMMAND=${1,,}
 
@@ -164,18 +126,55 @@ fi
 
 case $COMMAND in
 source)
-	hdr "Setting up the environment for building vLLM ..."
+	echo "## Setting up the environment for building vLLM ..."
 	setup_src
 	install_build_deps
+	exit $?
 	;;
-pip)
-	install_pip
+release)
+	VLLM_HDR_MSG="${VLLM_HDR_MSG} release"
+	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
+		VLLM_HDR_MSG="${VLLM_HDR_MSG} from extra index url"
+	elif [ -n "${VLLM_COMMIT:-}" ]; then
+		VLLM_HDR_MSG="${VLLM_HDR_MSG} commit ${VLLM_COMMIT}"
+		VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/${VLLM_COMMIT}"
+	fi
 	;;
 nightly)
-	install_nightly
+	VLLM_HDR_MSG="${VLLM_HDR_MSG} nightly"
+	VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/nightly"
 	;;
 *)
 	usage
 	exit 1
 	;;
 esac
+
+echo "## ${VLLM_HDR_MSG} ..."
+if [ -n "${TORCH_BACKEND:-}" ]; then
+	echo "# Using specified torch backend, ${TORCH_BACKEND}"
+elif [ -n "${ROCM_VERSION:-}" ]; then
+	echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+	echo "# Using the torch CPU backend"
+	TORCH_BACKEND=cpu
+elif [ -n "${CUDA_VERSION:-}" ]; then
+	echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+	TORCH_BACKEND=cu${CUDA_VERSION//-/}
+else
+	echo "# Using the torch auto backend"
+	TORCH_BACKEND=auto
+fi
+
+if [ -n "${VLLM_VERSION:-}" ]; then
+	echo "# Specified vLLM version ${VLLM_VERSION}"
+	VLLM_VERSION="==$VLLM_VERSION"
+fi
+
+uv pip install -U vllm${VLLM_VERSION:-} \
+	--torch-backend=${TORCH_BACKEND} \
+	${VLLM_EXTRA_INDEX_URL:-}
+
+# Fix up LD_LIBRARY_PATH for CUDA
+./ldpretend.sh
