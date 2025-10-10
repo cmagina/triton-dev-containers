@@ -16,44 +16,15 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0]\
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
 DEFAULT_UID=1000
 USER_ID=${USER_UID:-1000}
 GROUP_ID=${USER_GID:-1000}
 
-get_cols() {
-	read rows cols < <(stty size)
-	echo $cols
-}
-
-hdr() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v hdr_padding '#%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v hdr_line '#%.0s' {$(seq 1 $((2 * ${#hdr_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$hdr_line"
-	printf "%s %s %s\n" "$hdr_padding" "$msg" "$hdr_padding"
-	printf "%s\n" "$hdr_line"
-}
-
-info() {
-	local msg="$1"
-	local cols=$(get_cols)
-
-	printf -v info_padding '=%.0s' {$(seq 1 $((($cols - ${#msg} - 2) / 2)))}
-	printf -v info_line '=%.0s' {$(seq 1 $((2 * ${#info_padding} + ${#msg} + 2)))}
-
-	printf "%s\n" "$info_line"
-	printf "%s %s %s\n" "$info_padding" "$msg" "$info_padding"
-	printf "%s\n" "$info_line"
-}
-
 install_sudo() {
-	info "Installing and configuring sudo for $USER ..."
+	echo "# Installing and configuring sudo for $USER ..."
 	dnf -y install sudo
 	tee -a /etc/sudoers.d/${USER} <<EOF
 # Enable the user account to run sudo without a password
@@ -68,7 +39,7 @@ update_max_uid_gid() {
 	local current_min_uid
 	local current_min_gid
 
-	info "Updating max UID and GID ..."
+	echo "# Updating max UID and GID ..."
 
 	# Get current max UID and GID from /etc/login.defs
 	current_max_uid=$(grep "^UID_MAX" /etc/login.defs | awk '{print $2}')
@@ -148,10 +119,10 @@ create_user() {
 ##
 
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
-	hdr "Creating user $USER ..."
+	echo "## Creating user $USER ..."
 	update_max_uid_gid
 	create_user
 	install_sudo
 else
-	hdr "No user specified or user is root, not creating a user ..."
+	echo "## No user specified or user is root, not creating a user ..."
 fi

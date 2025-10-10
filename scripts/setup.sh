@@ -16,13 +16,10 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# SPDX-License-Identifier: Apache-2.0]\
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
 env_list=""
-
-# Create a symlink to the installed version of CUDA
-# RUN ln -sf /usr/local/cuda-${CUDA_VERSION/-/.} /usr/local/cuda
 
 save_env() {
 	# Define environment variables to export
@@ -36,8 +33,8 @@ save_env() {
 		save_vars+=("ROCM_VERSION")
 	fi
 
-	if [ -n "${HIP_VISIBLE_DEVICES:-}" ]; then
-		save_vars+=("HIP_VISIBLE_DEVICES")
+	if [ -n "${ROCR_VISIBLE_DEVICES:-}" ]; then
+		save_vars+=("ROCR_VISIBLE_DEVICES")
 	fi
 
 	if [ -n "${TORCH_VERSION:-}" ]; then
@@ -68,6 +65,7 @@ save_env() {
 ## Main
 ##
 
+echo "## Setting up the container environment ..."
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	./setup_user.sh
 	save_env

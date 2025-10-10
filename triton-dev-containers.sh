@@ -27,14 +27,15 @@ set -euo pipefail
 # Global Default Variables
 image_repo=quay.io/triton-dev-containers
 image_tag=latest
+framework=triton
 
 ## Image versions
 ubi_version=9
 cuda_version=12-9
-rocm_version=6.4.4
+rocm_version=6.3.3
 
 gitconfig_path="${HOME}/.gitconfig"
-hip_devices=${HIP_VISIBLE_DEVICES:-0}
+rocr_devices=${ROCR_VISIBLE_DEVICES:-0}
 
 ## Jupyter notebook
 jupyter_notebook=false
@@ -52,22 +53,28 @@ declare -a ctr_volume_opts
 
 usage() {
 	printf "Usage: %s [OPTION]... IMAGE_NAME\n" "$(basename "$0")"
-	printf "\tIMAGE_NAME\t\tImage name\n"
+	printf "\tDEVICE\t\t\tTarget device, [ amd | cpu | nvidia ]\n"
 	printf "Options\n"
-	printf "\t-d\t\tInstall debugging and analysis tools (i.e. NVIDIA Nsight)\n"
-	printf "\t-p [AUTO|PORT]\tExpose the specified port for the Jupyter notebook server (AUTO: %d)\n" "$default_port"
-	printf "\t-j MAX_JOBS\tMaximum number of jobs to use when building Triton/PyTorch/vLLM (Default: %d)\n" "$max_jobs"
-	printf "\t-r IMAGE_REPO\tImage repository (Default: %s)\n" "$image_repo"
-	printf "\t-s SOURCE\tLocal source directories to mount as volumes\n"
-	printf "\t\t\t\tLLVM=/path/to/llvm/source\n"
-	printf "\t\t\t\tTORCH=/path/to/torch/source\n"
-	printf "\t\t\t\tTRITON=/path/to/triton/source\n"
-	printf "\t\t\t\tUSER=/path/to/user/source\n"
-	printf "\t\t\t\tVLLM=/path/to/vllm/source\n"
-	printf "\t-t IMAGE_TAG\tImage tag (Default: %s)\n" "$image_tag"
-	printf "\t-u USERNAME\tUsername to use inside the image\n"
-	printf "\t-h\t\tPrint usage\n"
-	printf "\t-v\t\tVerbose\n"
+	printf "\t-d\t\t\tInstall debugging and analysis tools (i.e. NVIDIA Nsight)\n"
+	printf "\t-f FRAMEWORK\t\tImage for specific framework dev [ triton* | torch | vllm ] (Default: %s)\n" "$framework"
+	printf "\t-j MAX_JOBS\t\tMaximum number of jobs to use when building Triton/PyTorch/vLLM (Default: %d)\n" "$max_jobs"
+	printf "\t-o OPTION=ARGUMENT\tSpecify a value for an option\n"
+	printf "\t\t\t\t\tUBI_VERSION=Ubi image version [ 9 | 10 ]\n"
+	printf "\t\t\t\t\tCUDA_VERSION=CUDA version (i.e. 12-9)\n"
+	printf "\t\t\t\t\tROCM_VERSION=ROCm version (i.e. 6.4.4)\n"
+	printf "\t\t\t\t\tGITCONFIG=/path/to/.gitconfig\n"
+	printf "\t-p [AUTO|PORT]\t\tExpose the specified port for the Jupyter notebook server (AUTO: %d)\n" "$default_port"
+	printf "\t-r IMAGE_REPO\t\tImage repository (Default: %s)\n" "$image_repo"
+	printf "\t-s SOURCE\t\tLocal source directories to mount as volumes\n"
+	printf "\t\t\t\t\tLLVM=/path/to/llvm/source\n"
+	printf "\t\t\t\t\tTORCH=/path/to/torch/source\n"
+	printf "\t\t\t\t\tTRITON=/path/to/triton/source\n"
+	printf "\t\t\t\t\tUSER=/path/to/user/source\n"
+	printf "\t\t\t\t\tVLLM=/path/to/vllm/source\n"
+	printf "\t-t IMAGE_TAG\t\tImage tag (Default: %s)\n" "$image_tag"
+	printf "\t-u USERNAME\t\tUsername to use inside the image\n"
+	printf "\t-h\t\t\tPrint usage\n"
+	printf "\t-v\t\t\tVerbose\n"
 }
 
 set_container_runtime() {
@@ -167,7 +174,7 @@ set_device_opts() {
 			"--security-opt seccomp=unconfined"
 		)
 		ctr_env_opts+=(
-			"-e HIP_VISIBLE_DEVICES=${hip_devices}"
+			"-e ROCR_VISIBLE_DEVICES=${rocr_devices}"
 		)
 
 		image_name=${image_name}-${rocm_version}
@@ -211,6 +218,10 @@ set_device_opts() {
 }
 
 set_user_args() {
+	if [ -z "${username:-}" ] && [ "$(whoami)" != "root" ]; then
+		username=$(whoami)
+	fi
+
 	if [ -n "${username:-}" ] && [ "${username:-}" != "root" ]; then
 		ctr_args=(
 			"-e USER=$username"
@@ -232,13 +243,16 @@ set_user_args() {
 ## MAIN
 ##
 
-while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
+while getopts "c:df:j:o:p:r:s:t:u:hv" opt; do
 	case "$opt" in
 	c)
 		remote_connection=$OPTARG
 		;;
 	d)
 		dbg_tools=true
+		;;
+	f)
+		framework=${OPTARG}
 		;;
 	j)
 		max_jobs=$OPTARG
@@ -326,8 +340,8 @@ if [ -z "${1:-}" ]; then
 	exit 1
 fi
 
-image_name="${1:-}"
-target_device=
+target_device="${1:-}"
+image_name=ubi${ubi_version}-${target_device}
 
 ##
 ## Command Configuration
@@ -372,6 +386,6 @@ if [ -n "${remote_connection:-}" ]; then
 	ctr_connection="-r -c $remote_connection"
 fi
 
-printf "Running container image: %s/%s:%s with %s\n" "$image_repo" "$image_name" "$image_tag" "$ctr_cmd"
-printf "%s %s run -ti %s %s/%s:%s bash\n" "$ctr_cmd" "${ctr_connection:-}" "${ctr_args[*]}" "$image_repo" "$image_name" "$image_tag"
-$ctr_cmd ${ctr_connection:-} run -ti ${ctr_args[@]} "${image_repo}/${image_name}:${image_tag}" bash
+printf "Running container image: %s/%s-%s:%s with %s\n" "$image_repo" "$image_name" "$framework" "$image_tag" "$ctr_cmd"
+printf "%s %s run -ti %s %s/%s-%s:%s bash\n" "$ctr_cmd" "${ctr_connection:-}" "${ctr_args[*]}" "$image_repo" "$image_name" "$framework" "$image_tag"
+$ctr_cmd ${ctr_connection:-} run -ti ${ctr_args[@]} "${image_repo}/${image_name}-${framework}:${image_tag}" bash

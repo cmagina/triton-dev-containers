@@ -19,8 +19,9 @@ FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
 
 ARG CUDA_VERSION=12-9
 
+ARG INSTALL_JUPYTER=true
 ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=pip
+ARG INSTALL_TORCH=release
 ARG INSTALL_TRITON=source
 ARG INSTALL_VLLM=skip
 
@@ -32,6 +33,7 @@ RUN dnf -y update && \
     dnf clean all && rm -rf /var/cache/dnf
 
 ENV CUDA_VERSION=$CUDA_VERSION \
+    INSTALL_JUPYTER=$INSTALL_JUPYTER \
     INSTALL_LLVM=$INSTALL_LLVM \
     INSTALL_TORCH=$INSTALL_TORCH \
     INSTALL_TRITON=$INSTALL_TRITON \
