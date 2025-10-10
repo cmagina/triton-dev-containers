@@ -33,7 +33,7 @@ UBI_VERSION ?= 9
 
 PYTHON_VERSION=3.12
 CUDA_VERSION=12-9
-ROCM_VERSION=6.4.4
+ROCM_VERSION=6.3.3
 
 # Get latest PyTorch release version
 TORCH_VERSION=$(shell curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
@@ -65,24 +65,30 @@ INSTALL_VLLM ?= skip
 # Image naming
 # ------------------------------------------------------------------------------
 IMAGE_REPO ?= quay.io/triton-dev-containers
+IMAGE_PREFIX ?= ubi${UBI_VERSION}
 
 # Base image suffixes
+TRITON_SUFFIX ?= triton
 TORCH_SUFFIX ?= torch
 VLLM_SUFFIX ?= vllm
 
 # Image name definitions (clean and extensible)
-BASE_IMAGE_NAME ?= ubi$(UBI_VERSION)-base
-NVIDIA_IMAGE_NAME ?= ubi$(UBI_VERSION)-nvidia-$(CUDA_VERSION)
-CPU_IMAGE_NAME ?= ubi$(UBI_VERSION)-cpu
-AMD_IMAGE_NAME ?= ubi$(UBI_VERSION)-amd-$(ROCM_VERSION)
+BASE_IMAGE_NAME ?= base
+NVIDIA_IMAGE_NAME ?= nvidia
+AMD_IMAGE_NAME ?= amd
+CPU_IMAGE_NAME ?= cpu
 
-TORCH_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(TORCH_SUFFIX)
+TRITON_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TRITON_SUFFIX)
+TRITON_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TRITON_SUFFIX)
+TRITON_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(TRITON_SUFFIX)
+
+TORCH_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TORCH_SUFFIX)
+TORCH_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TORCH_SUFFIX)
 TORCH_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(TORCH_SUFFIX)
-TORCH_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(TORCH_SUFFIX)
 
-VLLM_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(VLLM_SUFFIX)
+VLLM_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(VLLM_SUFFIX)
+VLLM_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(VLLM_SUFFIX)
 VLLM_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(VLLM_SUFFIX)
-VLLM_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(VLLM_SUFFIX)
 
 # Image tag definitions (clean and extensible)
 BASE_TAG ?= latest
@@ -106,7 +112,7 @@ all: build-images
 # $(9) = dockerfile name
 define build-image
 	@echo Building image: $(IMAGE_REPO)/$(1):$(2) 
-	$(CTR_CMD) build -t $(IMAGE_REPO)/$(1):$(2) \
+	$(CTR_CMD) build -t $(IMAGE_REPO)/$(IMAGE_PREFIX)-$(1):$(2) \
 		--build-arg UBI_IMAGE=$(3) --build-arg UBI_VERSION=$(4) \
 		--build-arg INSTALL_TRITON=$(5) --build-arg INSTALL_TORCH=$(6) \
 		--build-arg INSTALL_VLLM=$(7) $(8) \
@@ -118,7 +124,7 @@ build-images: triton-image triton-cpu-image triton-amd-image torch-image torch-c
 
 .PHONY: gosu-image 
 gosu-image: ## Build the Triton gosu image
-	$(call build-image,ubi$(UBI_VERSION)-gosu,latest,,$(UBI_VERSION),,,,,Dockerfile.gosu)
+	$(call build-image,gosu,latest,,$(UBI_VERSION),,,,,Dockerfile.gosu)
 
 .PHONY: base-image
 base-image: gosu-image
@@ -139,27 +145,27 @@ torch-amd-image: base-image ## Build the PyTorch AMD devcontainer image
 
 .PHONY: triton-image
 triton-image: base-image ## Build the Triton NVIDIA devcontainer image
-	$(call build-image,$(NVIDIA_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,pip,skip,--build-arg CUDA_VERSION=$(CUDA_VERSION),Dockerfile.triton)
+	$(call build-image,$(TRITON_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,release,skip,--build-arg CUDA_VERSION=$(CUDA_VERSION),Dockerfile.triton)
 
 .PHONY: triton-cpu-image
 triton-cpu-image: base-image ## Build the Triton CPU devcontainer image
-	$(call build-image,$(CPU_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,pip,skip,,Dockerfile.triton-cpu)
+	$(call build-image,$(TRITON_CPU_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,release,skip,,Dockerfile.triton-cpu)
 
 .PHONY: triton-amd-image
 triton-amd-image: base-image ## Build the Triton AMD devcontainer image
-	$(call build-image,$(AMD_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,pip,skip,--build-arg ROCM_VERSION=$(ROCM_VERSION),Dockerfile.triton-amd)
+	$(call build-image,$(TRITON_AMD_IMAGE_NAME),$(TRITON_TAG),$(UBI_IMAGE),$(UBI_VERSION),source,release,skip,--build-arg ROCM_VERSION=$(ROCM_VERSION),Dockerfile.triton-amd)
 
 .PHONY: vllm-image
 vllm-image: base-image ## Build the vLLM NVIDIA devcontainer image
-	$(call build-image,$(VLLM_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),pip,pip,source,--build-arg CUDA_VERSION=$(CUDA_VERSION),Dockerfile.triton)
+	$(call build-image,$(VLLM_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),release,release,source,--build-arg CUDA_VERSION=$(CUDA_VERSION),Dockerfile.triton)
 
 .PHONY: vllm-cpu-image
 vllm-cpu-image: base-image ## Build the vLLM CPU devcontainer image
-	$(call build-image,$(VLLM_CPU_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),pip,pip,source,,Dockerfile.triton-cpu)
+	$(call build-image,$(VLLM_CPU_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),release,release,source,,Dockerfile.triton-cpu)
 
 .PHONY: vllm-amd-image
 vllm-amd-image: base-image ## Build the vLLM AMD devcontainer image
-	$(call build-image,$(VLLM_AMD_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),pip,pip,source,--build-arg ROCM_VERSION=$(ROCM_VERSION),Dockerfile.triton-amd)
+	$(call build-image,$(VLLM_AMD_IMAGE_NAME),$(VLLM_TAG),$(UBI_IMAGE),$(UBI_VERSION),release,release,source,--build-arg ROCM_VERSION=$(ROCM_VERSION),Dockerfile.triton-amd)
 
 ##@ Container Run
 RUNTIME_ARGS := -r $(IMAGE_REPO) -t $(TRITON_TAG) -p $(NOTEBOOK_PORT) -j $(MAX_JOBS)
@@ -202,39 +208,39 @@ base-run: ## Run the Base devcontainer image
 
 .PHONY: triton-run
 triton-run: ## Run the Triton NVIDIA devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(NVIDIA_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f triton $(NVIDIA_IMAGE_NAME)
 
 .PHONY: triton-cpu-run
 triton-cpu-run: ## Run the Triton CPU devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(CPU_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f triton $(CPU_IMAGE_NAME)
 
 .PHONY: triton-amd-run
 triton-amd-run: ## Run the Triton AMD devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(AMD_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f triton $(AMD_IMAGE_NAME)
 
 .PHONY: torch-run
 torch-run: ## Run the PyTorch NVIDIA devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(TORCH_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f torch $(NVIDIA_IMAGE_NAME)
 
 .PHONY: torch-cpu-run
 torch-cpu-run: ## Run the PyTorch CPU devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(TORCH_CPU_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f torch $(CPU_IMAGE_NAME)
 
 .PHONY: torch-amd-run
 torch-amd-run: ## Run the PyTorch AMD devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(TORCH_AMD_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f torch $(AMD_IMAGE_NAME)
 
 .PHONY: vllm-run
 vllm-run: ## Run the vLLM NVIDIA devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(VLLM_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f vllm $(NVIDIA_IMAGE_NAME)
 
 .PHONY: vllm-cpu-run
 vllm-cpu-run: ## Run the vLLM CPU devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(VLLM_CPU_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f vllm $(CPU_IMAGE_NAME)
 
 .PHONY: vllm-amd-run
 vllm-amd-run: ## Run the vLLM AMD devcontainer image
-	@./triton-dev-containers.sh $(RUNTIME_ARGS) $(VLLM_AMD_IMAGE_NAME)
+	@./triton-dev-containers.sh $(RUNTIME_ARGS) -f vllm $(AMD_IMAGE_NAME)
 
 ##@ Devcontainer
 .PHONY: devcontainers
