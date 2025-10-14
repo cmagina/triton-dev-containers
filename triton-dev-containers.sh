@@ -79,7 +79,7 @@ Options
         VLLM_COMMIT              vLLM git commit hash for wheel install (https://wheels.vllm.ai/<commit>)
     -p [ DEFAULT | PORT ]    Expose the specified port for the Jupyter notebook server (Default: $default_port)
     -r IMAGE_REPO            Image repository (Default: $image_repo)
-    -s SOURCE                Local source directories to mount as volumes
+    -s SOURCE=PATH           Local source directories to mount as volumes
         LLVM                     /path/to/llvm/source
         TORCH                    /path/to/torch/source
         TRITON                   /path/to/triton/source
