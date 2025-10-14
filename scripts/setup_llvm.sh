@@ -36,7 +36,7 @@ TRITON_CPU_BACKEND=${TRITON_CPU_BACKEND:-0}
 
 setup_src() {
 	if [ ! -d "$LLVM_DIR" ]; then
-		echo "# Cloning the LLVM Project repo $LLVM_REPO to $LLVM_DIR ..."
+		echo "Cloning the LLVM Project repo $LLVM_REPO to $LLVM_DIR ..."
 		git clone "$LLVM_REPO" "$LLVM_DIR"
 		if [ ! -d "$LLVM_DIR" ]; then
 			echo "$LLVM_DIR not found. ERROR Cloning repository..."
@@ -52,7 +52,7 @@ setup_src() {
 		git fetch origin
 	fi
 
-	echo "# Adding LLVM_BUILD_PATH to ${HOME}/.bashrc ..."
+	echo "Adding LLVM_BUILD_PATH to ${HOME}/.bashrc ..."
 	echo "export LLVM_BUILD_PATH=${LLVM_BUILD_PATH}" >>${HOME}/.bashrc
 	echo "Run 'source ${HOME}/.bashrc' to update the current shell"
 
@@ -60,19 +60,19 @@ setup_src() {
 }
 
 install_build_deps() {
-	echo "# Installing LLVM dependencies ..."
 	pushd "$LLVM_DIR" 1>/dev/null || exit 1
-	uv pip install --upgrade cmake ninja ccache pybind11
-
 	if [ -f mlir/python/requirements.txt ]; then
+		echo "Installing LLVM dependencies ..."
 		uv pip install -r mlir/python/requirements.txt
 	fi
 	popd 1>/dev/null
 }
 
 usage() {
-	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload LLVM's source (if needed) and install the build deps\n"
+	cat >&2 <<EOF
+Usage: $(basename "$0") [COMMAND]
+    source    Download LLVM's source (if needed) and install the build deps
+EOF
 }
 
 ##
@@ -83,7 +83,7 @@ COMMAND=${1,,}
 
 case $COMMAND in
 source)
-	echo "## Setting up the environment for building LLVM ..."
+	echo "Setting up the environment for building LLVM ..."
 	setup_src
 	install_build_deps
 	;;

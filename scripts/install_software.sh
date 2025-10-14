@@ -23,16 +23,16 @@ NOTEBOOK_PORT=${NOTEBOOK_PORT:-8888}
 DEMO_FLASH_ATTN_KERNEL=https://raw.githubusercontent.com/fulvius31/triton-cache-comparison/refs/heads/main/scripts/flash_attention.py
 
 install_user_deps() {
-	echo "# Upgrading pip and installing uv ..."
+	echo "Upgrading pip and installing uv ..."
 	python${PYTHON_VERSION} -m pip install --upgrade pip uv
 }
 
 install_jupyter_notebook() {
 	if [ "${INSTALL_JUPYTER:-}" = "true" ]; then
-		echo "## Installing Jupyter Notebook ..."
+		echo "Installing Jupyter Notebook ..."
 		uv pip install jupyter
 
-		echo "# Adding start_jupyter script to /usr/local/bin/start_jupyter"
+		echo "Adding start_jupyter script to /usr/local/bin/start_jupyter"
 		${SUDO:-} tee /usr/local/bin/start_jupyter <<EOF
 #! /bin/bash -e
 
@@ -57,18 +57,18 @@ uv run jupyter notebook --ip=0.0.0.0 --port=\${NOTEBOOK_PORT} --no-browser \\
 	--allow-root --notebook-dir=\${NOTEBOOK_DIR:-\${WORKSPACE}}
 EOF
 		${SUDO:-} chmod +x /usr/local/bin/start_jupyter
-		echo "# start_jupyter added!"
+		echo "start_jupyter added!"
 	fi
 }
 
 install_tools() {
 	if [ ! -f "flash_attention.py" ]; then
-		echo "# Downloading a test flash attention triton kernel ..."
+		echo "Downloading a test flash attention triton kernel ..."
 		curl -o $(basename $DEMO_FLASH_ATTN_KERNEL) $DEMO_FLASH_ATTN_KERNEL
 	fi
 
 	if command ccache &>/dev/null; then
-		echo "# Adding CCACHE environment variables to ${HOME}/.bashrc ..."
+		echo "Adding CCACHE environment variables to ${HOME}/.bashrc ..."
 		tee -a ${HOME}/.bashrc <<EOF
 
 # Enable CCACHE use
@@ -78,12 +78,12 @@ EOF
 	fi
 
 	if [ -n "${CUDA_VERSION:-}" ]; then
-		echo "# Installing the NVIDIA CUDA repository ..."
+		echo "Installing the NVIDIA CUDA repository ..."
 		${SUDO:-} dnf -y config-manager --add-repo \
 			https://developer.download.nvidia.com/compute/cuda/repos/rhel${UBI_VERSION}/x86_64/cuda-rhel${UBI_VERSION}.repo
 
 		if [ "${INSTALL_TOOLS:-}" = "true" ]; then
-			echo "# Installing NVIDIA Nsight ..."
+			echo "Installing NVIDIA Nsight ..."
 			${SUDO:-} dnf -y install cublasmp cuda-cupti-${CUDA_VERSION} \
 				cuda-gdb-${CUDA_VERSION} cuda-nsight-${CUDA_VERSION} \
 				cuda-nsight-compute-${CUDA_VERSION} cuda-nsight-systems-${CUDA_VERSION}
@@ -97,7 +97,7 @@ EOF
 			uv pip install jupyterlab-nvidia-nsight nvtx
 		fi
 	elif [ -n "${ROCM_VERSION:-}" ] && [ "${INSTALL_TOOLS:-}" = "true" ]; then
-		echo "# Installing ROCm Developer Tools ..."
+		echo "Installing ROCm Developer Tools ..."
 		${SUDO:-} dnf -y install rocm-developer-tools
 
 		if [ -f "/opt/rocm-${ROCM_VERSION}/libexec/rocprofiler-compute/requirements.txt" ]; then
@@ -115,8 +115,8 @@ if command -v sudo &>/dev/null; then
 	export SUDO=$(which sudo)
 fi
 
-echo "## Installing user dependencies ..."
+echo "Installing user dependencies ..."
 install_user_deps
 install_jupyter_notebook
-echo "## Installing tools ..."
+echo "Installing tools ..."
 install_tools

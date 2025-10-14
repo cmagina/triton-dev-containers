@@ -25,20 +25,52 @@ save_env() {
 	# Define environment variables to export
 	local -a save_vars
 
-	if [ -n "${TRITON_CPU_BACKEND:-}" ]; then
-		save_vars+=("TRITON_CPU_BACKEND")
-	fi
-
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		save_vars+=("ROCM_VERSION")
+	if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+		save_vars+=("CUDA_VISIBLE_DEVICES")
 	fi
 
 	if [ -n "${ROCR_VISIBLE_DEVICES:-}" ]; then
 		save_vars+=("ROCR_VISIBLE_DEVICES")
 	fi
 
+	if [ -n "${TRITON_CPU_BACKEND:-}" ]; then
+		save_vars+=("TRITON_CPU_BACKEND")
+	fi
+
+	if [ -n "${CUDA_VERSION:-}" ]; then
+		save_vars+=("CUDA_VERSION")
+	fi	
+
+	if [ -n "${ROCM_VERSION:-}" ]; then
+		save_vars+=("ROCM_VERSION")
+	fi
+
 	if [ -n "${TORCH_VERSION:-}" ]; then
 		save_vars+=("TORCH_VERSION")
+	fi
+
+	if [ -n "${TRITON_VERSION:-}" ]; then
+		save_vars+=("TRITON_VERSION")
+	fi
+
+	if [ -n "${VLLM_VERSION:-}" ]; then
+		save_vars+=("VLLM_VERSION")
+	fi
+	
+	if [ -n "${TORCH_INDEX_URL:-}" ]; then
+		save_vars+=("TORCH_INDEX_URL")
+	fi
+
+	if [ -n "${TORCH_BACKEND:-}" ]; then
+		save_vars+=("TORCH_BACKEND")
+	fi
+
+	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
+		save_vars+=("VLLM_EXTRA_INDEX_URL")
+	fi
+
+	if [ -n "${VLLM_COMMIT:-}" ]; then
+		save_vars+=("VLLM_COMMIT")
 	fi
 
 	if [ -n "${DISPLAY:-}" ]; then
@@ -65,7 +97,7 @@ save_env() {
 ## Main
 ##
 
-echo "## Setting up the container environment ..."
+echo "Setting up the container environment ..."
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	./setup_user.sh
 	save_env

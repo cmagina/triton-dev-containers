@@ -39,7 +39,7 @@ setup_torch_src() {
 	fi
 
 	if [ ! -d "$TORCH_DIR" ]; then
-		echo "# Cloning the Torch repo $TORCH_REPO to $TORCH_DIR ..."
+		echo "Cloning the Torch repo $TORCH_REPO to $TORCH_DIR ..."
 		git clone "$TORCH_REPO" "$TORCH_DIR"
 		if [ ! -d "$TORCH_DIR" ]; then
 			echo "$TORCH_DIR not found. ERROR Cloning repository..."
@@ -48,7 +48,7 @@ setup_torch_src() {
 			CLONED=1
 		fi
 	else
-		echo "# Torch repo already present, not cloning ..."
+		echo "Torch repo already present, not cloning ..."
 	fi
 
 	pushd "$TORCH_DIR" 1>/dev/null || exit 1
@@ -61,7 +61,7 @@ setup_torch_src() {
 			git checkout $TORCH_GITREF
 		fi
 
-		echo "# Installing pre-commit dependencies ..."
+		echo "Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -79,7 +79,7 @@ setup_torchvision_src() {
 	fi
 
 	if [ ! -d "$TORCH_VISION_DIR" ]; then
-		echo "# Cloning the Torch repo $TORCH_VISION_REPO to $TORCH_VISION_DIR ..."
+		echo "Cloning the Torch repo $TORCH_VISION_REPO to $TORCH_VISION_DIR ..."
 		git clone "$TORCH_VISION_REPO" "$TORCH_VISION_DIR"
 		if [ ! -d "$TORCH_VISION_DIR" ]; then
 			echo "$TORCH_VISION_DIR not found. ERROR Cloning repository..."
@@ -88,7 +88,7 @@ setup_torchvision_src() {
 			CLONED=1
 		fi
 	else
-		echo "# Torch repo already present, not cloning ..."
+		echo "Torch repo already present, not cloning ..."
 	fi
 
 	pushd "$TORCH_VISION_DIR" 1>/dev/null || exit 1
@@ -101,7 +101,7 @@ setup_torchvision_src() {
 			git checkout $TORCH_VISION_GITREF
 		fi
 
-		echo "# Installing pre-commit dependencies ..."
+		echo "Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -117,7 +117,7 @@ install_build_deps() {
 	pushd "$TORCH_DIR" 1>/dev/null || exit 1
 
 	if [ -f requirements.txt ]; then
-		echo "# Installing Torch dependencies ..."
+		echo "Installing Torch dependencies ..."
 		# Run this command from the PyTorch directory after cloning the source code using the “Get the PyTorch Source“ section above
 		uv pip install --group dev
 		uv pip install mkl-static mkl-include
@@ -132,11 +132,13 @@ install_build_deps() {
 }
 
 usage() {
-	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload Torch's source (if needed) and install the build deps\n"
-	printf "\trelease\t\tInstall Torch\n"
-	printf "\tnightly\t\tInstall the Torch nightly wheel\n"
-	printf "\ttest\t\tInstall the Torch test wheel\n"
+    cat >&2 <<EOF
+Usage: $(basename "$0") [COMMAND] 
+    source     Download Torch's source (if needed) and install the build deps
+    release    Install Torch
+    nightly    Install the Torch nightly wheel
+    test       Install the Torch test wheel
+EOF
 }
 
 ##
@@ -147,21 +149,21 @@ COMMAND=${1,,}
 
 case $COMMAND in
 source)
-	echo "## Setting up the environment for building Torch ..."
+	echo "Setting up the environment for building Torch ..."
 	setup_torch_src
 	setup_torchvision_src
 	install_build_deps
 	exit $?
 	;;
 release)
-	TORCH_HDR_MSG="${TORCH_HDR_MSG} release"
+	TORCH_HDR_MSG="$TORCH_HDR_MSG release"
 	;;
 nightly)
-	TORCH_HDR_MSG="${TORCH_HDR_MSG} nightly"
+	TORCH_HDR_MSG="$TORCH_HDR_MSG nightly"
 	TORCH_INDEX_URL_BUILD=/nightly
 	;;
 test)
-	TORCH_HDR_MSG="${TORCH_HDR_MSG} test"
+	TORCH_HDR_MSG="$TORCH_HDR_MSG test"
 	TORCH_INDEX_URL_BUILD=/test
 	;;
 *)
@@ -170,38 +172,38 @@ test)
 	;;
 esac
 
-echo "## ${TORCH_HDR_MSG} ..."
+echo "${TORCH_HDR_MSG} ..."
 if [ -n "${TORCH_INDEX_URL:-}" ]; then
-	echo "# Using the specified index, ${TORCH_INDEX_URL}"
-	TORCH_INDEX_URL="--index-url  ${TORCH_INDEX_URL}"
+	echo "Using the specified index, $TORCH_INDEX_URL"
+	TORCH_INDEX_URL="--index-url  $TORCH_INDEX_URL"
 else
 	TORCH_INDEX_URL="--index-url ${TORCH_INDEX_URL_BASE}${TORCH_INDEX_URL_BUILD:-}"
 fi
 
 if [ -n "${TORCH_BACKEND:-}" ]; then
-	echo "# Using specified torch backend, ${TORCH_BACKEND}"
+	echo "Using specified torch backend, $TORCH_BACKEND"
 elif [ -n "${ROCM_VERSION:-}" ]; then
-	echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+	echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
 	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
 elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
-	echo "# Using the torch CPU backend"
+	echo "Using the torch CPU backend"
 	TORCH_BACKEND=cpu
 elif [ -n "${CUDA_VERSION:-}" ]; then
-	echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+	echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
 	TORCH_BACKEND=cu${CUDA_VERSION//-/}
 else
-	echo "# Using the torch auto backend"
+	echo "Using the torch auto backend"
 	TORCH_BACKEND=auto
 fi
 
 if [ -n "${TORCH_VERSION:-}" ]; then
-	echo "# Specified Torch version ${TORCH_VERSION}"
-	TORCH_VERSION="==${TORCH_VERSION}"
+	echo "Specified Torch version $TORCH_VERSION"
+	TORCH_VERSION="==$TORCH_VERSION"
 fi
 
 uv pip install torch${TORCH_VERSION:-} \
-	--torch-backend=${TORCH_BACKEND} \
-	${TORCH_INDEX_URL}
+	--torch-backend=$TORCH_BACKEND \
+	$TORCH_INDEX_URL
 
 # Fix up LD_LIBRARY_PATH for CUDA
 ./ldpretend.sh

@@ -24,7 +24,7 @@ USER_ID=${USER_UID:-1000}
 GROUP_ID=${USER_GID:-1000}
 
 install_sudo() {
-	echo "# Installing and configuring sudo for $USER ..."
+	echo "Installing and configuring sudo for $USER ..."
 	dnf -y install sudo
 	tee -a /etc/sudoers.d/${USER} <<EOF
 # Enable the user account to run sudo without a password
@@ -39,7 +39,7 @@ update_max_uid_gid() {
 	local current_min_uid
 	local current_min_gid
 
-	echo "# Updating max UID and GID ..."
+	echo "Updating max UID and GID ..."
 
 	# Get current max UID and GID from /etc/login.defs
 	current_max_uid=$(grep "^UID_MAX" /etc/login.defs | awk '{print $2}')
@@ -119,10 +119,10 @@ create_user() {
 ##
 
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
-	echo "## Creating user $USER ..."
+	echo "Creating user $USER ..."
 	update_max_uid_gid
 	create_user
 	install_sudo
 else
-	echo "## No user specified or user is root, not creating a user ..."
+	echo "No user specified or user is root, not creating a user ..."
 fi

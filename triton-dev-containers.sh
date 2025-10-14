@@ -37,6 +37,9 @@ rocm_version=6.3.3
 gitconfig_path="${HOME}/.gitconfig"
 rocr_devices=${ROCR_VISIBLE_DEVICES:-0}
 
+# PyPi Index URLs
+torch_index_url=https://download.pytorch.org/whl
+
 ## Jupyter notebook
 jupyter_notebook=false
 default_port=8888
@@ -52,29 +55,41 @@ declare -a ctr_security_opts
 declare -a ctr_volume_opts
 
 usage() {
-	printf "Usage: %s [OPTION]... IMAGE_NAME\n" "$(basename "$0")"
-	printf "\tDEVICE\t\t\tTarget device, [ amd | cpu | nvidia ]\n"
-	printf "Options\n"
-	printf "\t-d\t\t\tInstall debugging and analysis tools (i.e. NVIDIA Nsight)\n"
-	printf "\t-f FRAMEWORK\t\tImage for specific framework dev [ triton* | torch | vllm ] (Default: %s)\n" "$framework"
-	printf "\t-j MAX_JOBS\t\tMaximum number of jobs to use when building Triton/PyTorch/vLLM (Default: %d)\n" "$max_jobs"
-	printf "\t-o OPTION=ARGUMENT\tSpecify a value for an option\n"
-	printf "\t\t\t\t\tUBI_VERSION=Ubi image version [ 9 | 10 ]\n"
-	printf "\t\t\t\t\tCUDA_VERSION=CUDA version (i.e. 12-9)\n"
-	printf "\t\t\t\t\tROCM_VERSION=ROCm version (i.e. 6.4.4)\n"
-	printf "\t\t\t\t\tGITCONFIG=/path/to/.gitconfig\n"
-	printf "\t-p [AUTO|PORT]\t\tExpose the specified port for the Jupyter notebook server (AUTO: %d)\n" "$default_port"
-	printf "\t-r IMAGE_REPO\t\tImage repository (Default: %s)\n" "$image_repo"
-	printf "\t-s SOURCE\t\tLocal source directories to mount as volumes\n"
-	printf "\t\t\t\t\tLLVM=/path/to/llvm/source\n"
-	printf "\t\t\t\t\tTORCH=/path/to/torch/source\n"
-	printf "\t\t\t\t\tTRITON=/path/to/triton/source\n"
-	printf "\t\t\t\t\tUSER=/path/to/user/source\n"
-	printf "\t\t\t\t\tVLLM=/path/to/vllm/source\n"
-	printf "\t-t IMAGE_TAG\t\tImage tag (Default: %s)\n" "$image_tag"
-	printf "\t-u USERNAME\t\tUsername to use inside the image\n"
-	printf "\t-h\t\t\tPrint usage\n"
-	printf "\t-v\t\t\tVerbose\n"
+	cat >&2 <<EOF
+Usage: ${0##*/} [OPTION]... DEVICE
+    DEVICE                   Target device [ amd | cpu | nvidia ]
+Options
+    -d                       Install debugging and analysis tools (i.e. NVIDIA Nsight, ROCm Systems)
+    -f FRAMEWORK             Image for specific framework dev (Default: $framework) 
+                                 [ triton* | torch | vllm ]
+    -j MAX_JOBS              Maximum number of jobs to use when building Triton/PyTorch/vLLM (Default: $max_jobs)
+    -o OPTION=ARGUMENT       Specify a value for an option
+        UBI_VERSION              Ubi image version (Default: $ubi_version)
+        CUDA_VERSION             CUDA version (Default: $cuda_version)
+        ROCM_VERSION             ROCm version (Default: $rocm_version)
+        TRITON_VERSION           Triton wheel version
+        TORCH_VERSION            Torch wheel version
+        VLLM_VERSION             vLLM wheel version
+        CUDA_VISIBLE_DEVICES     List of NVIDIA device indices (i.e. 0,2)
+        ROCR_VISIBLE_DEVICES     List of AMD device indices or UUIDs (i.e. 0,GPU-DEADBEEFDEADBEEF)
+        GITCONFIG                /path/to/.gitconfig (Default: $gitconfig_path)
+        TORCH_INDEX_URL          http://<url> (Default: $torch_index_url)
+        TORCH_BACKEND            Framwork version: [ cu${cuda_version//-/} | rocm${rocm_version%.*} | cpu ]
+        VLLM_EXTRA_INDEX_URL     http://<url> (Not used with VLLM_COMMIT)
+        VLLM_COMMIT              vLLM git commit hash for wheel install (https://wheels.vllm.ai/<commit>)
+    -p [ DEFAULT | PORT ]    Expose the specified port for the Jupyter notebook server (Default: $default_port)
+    -r IMAGE_REPO            Image repository (Default: $image_repo)
+    -s SOURCE                Local source directories to mount as volumes
+        LLVM                     /path/to/llvm/source
+        TORCH                    /path/to/torch/source
+        TRITON                   /path/to/triton/source
+        USER                     /path/to/user/source
+        VLLM                     /path/to/vllm/source
+    -t IMAGE_TAG             Image tag (Default: $image_tag)
+    -u USERNAME              Username to use inside the image
+    -h                       Print usage
+    -v                       Verbose
+EOF
 }
 
 set_container_runtime() {
@@ -86,6 +101,21 @@ set_container_runtime() {
 		echo "Could not find the podman or docker container runtime."
 		echo "Please install one of them."
 		exit 1
+	fi
+}
+
+set_environment() {
+	ctr_env_opts+=(
+		"-e TORCH_INDEX_URL=$torch_index_url"
+		"-e TORCH_BACKEND=$torch_backend"
+	)
+
+	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
+		ctr_env_opts+=("-e VLLM_EXTRA_INDEX_URL=$VLLM_EXTRA_INDEX_URL")
+	fi
+
+	if [ -n "${VLLM_COMMIT:-}" ]; then
+		ctr_env_opts+=("-e VLLM_COMMIT=$VLLM_COMMIT")
 	fi
 }
 

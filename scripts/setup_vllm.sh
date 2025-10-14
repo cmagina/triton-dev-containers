@@ -39,7 +39,7 @@ VLLM_HDR_MSG="Installing vLLM"
 
 setup_src() {
 	if [ ! -d "$VLLM_DIR" ]; then
-		echo "# Cloning the vLLM repo $VLLM_REPO to $VLLM_DIR ..."
+		echo "Cloning the vLLM repo $VLLM_REPO to $VLLM_DIR ..."
 		git clone "$VLLM_REPO" "$VLLM_DIR"
 		if [ ! -d "$VLLM_DIR" ]; then
 			echo "$VLLM_DIR not found. ERROR Cloning repository..."
@@ -48,7 +48,7 @@ setup_src() {
 			CLONED=1
 		fi
 	else
-		echo "# vLLM repo already present, not cloning ..."
+		echo "vLLM repo already present, not cloning ..."
 	fi
 
 	pushd "$VLLM_DIR" 1>/dev/null || exit 1
@@ -57,11 +57,7 @@ setup_src() {
 		git submodule sync
 		git submodule update --init --recursive
 
-		if [ -n "${VLLM_GITREF:-}" ]; then
-			git checkout $VLLM_GITREF
-		fi
-
-		echo "# Installing pre-commit dependencies ..."
+		echo "Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -73,7 +69,7 @@ install_build_deps() {
 	pushd "$VLLM_DIR" 1>/dev/null || exit 1
 
 	if [ -n "${ROCM_VERSION:-}" ]; then
-		echo "# Installing ROCm build dependencies ..."
+		echo "Installing ROCm build dependencies ..."
 		if [ -e "/opt/rocm/share/amd_smi" ]; then
 			uv pip install /opt/rocm/share/amd_smi
 		fi
@@ -95,12 +91,12 @@ install_build_deps() {
 		export PYTORCH_ROCM_ARCH="gfx90a;gfx942"
 		EOF
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "# Installing CUDA build dependencies ..."
+		echo "Installing CUDA build dependencies ..."
 		${SUDO:-} dnf -y install cuda-toolkit-${CUDA_VERSION}
 	fi
 
 	if [ -f requirements/build.txt ]; then
-		echo "# Installing vLLM dependencies ..."
+		echo "Installing vLLM dependencies ..."
 		uv pip install -r requirements/build.txt
 	fi
 
@@ -108,10 +104,12 @@ install_build_deps() {
 }
 
 usage() {
-	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload vLLM's source (if needed) and install the build deps\n"
-	printf "\trelease\t\tInstall vLLM\n"
-	printf "\tnightly\t\tInstall the vLLM nightly wheel\n"
+	cat >&2 <<EOF
+Usage: $(basename "$0") [COMMAND]
+    source     Download vLLM's source (if needed) and install the build deps
+    release    Install vLLM
+    nightly    Install the vLLM nightly wheel
+EOF
 }
 
 ##
@@ -126,22 +124,22 @@ fi
 
 case $COMMAND in
 source)
-	echo "## Setting up the environment for building vLLM ..."
+	echo "Setting up the environment for building vLLM ..."
 	setup_src
 	install_build_deps
 	exit $?
 	;;
 release)
-	VLLM_HDR_MSG="${VLLM_HDR_MSG} release"
+	VLLM_HDR_MSG="$VLLM_HDR_MSG release"
 	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
-		VLLM_HDR_MSG="${VLLM_HDR_MSG} from extra index url"
+		VLLM_HDR_MSG="$VLLM_HDR_MSG from extra index url"
 	elif [ -n "${VLLM_COMMIT:-}" ]; then
-		VLLM_HDR_MSG="${VLLM_HDR_MSG} commit ${VLLM_COMMIT}"
+		VLLM_HDR_MSG="$VLLM_HDR_MSG commit $VLLM_COMMIT"
 		VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/${VLLM_COMMIT}"
 	fi
 	;;
 nightly)
-	VLLM_HDR_MSG="${VLLM_HDR_MSG} nightly"
+	VLLM_HDR_MSG="$VLLM_HDR_MSG nightly"
 	VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/nightly"
 	;;
 *)
@@ -150,30 +148,30 @@ nightly)
 	;;
 esac
 
-echo "## ${VLLM_HDR_MSG} ..."
+echo "$VLLM_HDR_MSG ..."
 if [ -n "${TORCH_BACKEND:-}" ]; then
-	echo "# Using specified torch backend, ${TORCH_BACKEND}"
+	echo "Using specified torch backend, $TORCH_BACKEND"
 elif [ -n "${ROCM_VERSION:-}" ]; then
-	echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+	echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
 	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
 elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
-	echo "# Using the torch CPU backend"
+	echo "Using the torch CPU backend"
 	TORCH_BACKEND=cpu
 elif [ -n "${CUDA_VERSION:-}" ]; then
-	echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+	echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
 	TORCH_BACKEND=cu${CUDA_VERSION//-/}
 else
-	echo "# Using the torch auto backend"
+	echo "Using the torch auto backend"
 	TORCH_BACKEND=auto
 fi
 
 if [ -n "${VLLM_VERSION:-}" ]; then
-	echo "# Specified vLLM version ${VLLM_VERSION}"
+	echo "Specified vLLM version $VLLM_VERSION"
 	VLLM_VERSION="==$VLLM_VERSION"
 fi
 
 uv pip install -U vllm${VLLM_VERSION:-} \
-	--torch-backend=${TORCH_BACKEND} \
+	--torch-backend=$TORCH_BACKEND \
 	${VLLM_EXTRA_INDEX_URL:-}
 
 # Fix up LD_LIBRARY_PATH for CUDA

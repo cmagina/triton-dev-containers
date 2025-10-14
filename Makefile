@@ -21,80 +21,99 @@ help: ## Display this help.
 # ------------------------------------------------------------------------------
 # System environment and tooling
 # ------------------------------------------------------------------------------
-CTR_CMD := $(or $(shell command -v podman), $(shell command -v docker))
-mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
-source_dir := $(dir $(mkfile_path))
-
-# ------------------------------------------------------------------------------
-# Build and runtime options
-# ------------------------------------------------------------------------------
-UBI_IMAGE ?= ubi
-UBI_VERSION ?= 9
-
-PYTHON_VERSION=3.12
-CUDA_VERSION=12-9
-ROCM_VERSION=6.3.3
-
-# Get latest PyTorch release version
-TORCH_VERSION=$(shell curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
-
-# Source code paths
-llvm_path ?=
-torch_path ?=
-triton_path ?= $(source_dir)
-user_path ?=
-vllm_path ?=
-
-create_user ?= $(USER)
-
-# ------------------------------------------------------------------------------
-# Runtime configuration
-# ------------------------------------------------------------------------------
-RUNTIME_ARGS ?=
-MAX_JOBS ?= $(shell nproc --all)
-NOTEBOOK_PORT ?= 8888
-INSTALL_NSIGHT ?= false
-INSTALL_TOOLS ?= false
-
-# Options: source | pip | skip
-INSTALL_TRITON ?= skip
-INSTALL_TORCH ?= skip
-INSTALL_VLLM ?= skip
+CTR_CMD					:= $(or $(shell command -v podman), $(shell command -v docker))
+mkfile_path				:= $(abspath $(lastword $(MAKEFILE_LIST)))
+source_dir				:= $(dir $(mkfile_path))
 
 # ------------------------------------------------------------------------------
 # Image naming
 # ------------------------------------------------------------------------------
-IMAGE_REPO ?= quay.io/triton-dev-containers
-IMAGE_PREFIX ?= ubi${UBI_VERSION}
+UBI_IMAGE				?= ubi
+UBI_VERSION				?= 9
+
+IMAGE_REPO				?= quay.io/triton-dev-containers
+IMAGE_PREFIX			?= ubi$(UBI_VERSION)
 
 # Base image suffixes
-TRITON_SUFFIX ?= triton
-TORCH_SUFFIX ?= torch
-VLLM_SUFFIX ?= vllm
+TRITON_SUFFIX			?= triton
+TORCH_SUFFIX			?= torch
+VLLM_SUFFIX				?= vllm
 
 # Image name definitions (clean and extensible)
-BASE_IMAGE_NAME ?= base
-NVIDIA_IMAGE_NAME ?= nvidia
-AMD_IMAGE_NAME ?= amd
-CPU_IMAGE_NAME ?= cpu
+BASE_IMAGE_NAME			?= base
+NVIDIA_IMAGE_NAME		?= nvidia
+AMD_IMAGE_NAME			?= amd
+CPU_IMAGE_NAME			?= cpu
 
-TRITON_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TRITON_SUFFIX)
-TRITON_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TRITON_SUFFIX)
-TRITON_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(TRITON_SUFFIX)
+TRITON_IMAGE_NAME		?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TRITON_SUFFIX)
+TRITON_AMD_IMAGE_NAME	?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TRITON_SUFFIX)
+TRITON_CPU_IMAGE_NAME	?= $(CPU_IMAGE_NAME)-$(TRITON_SUFFIX)
 
-TORCH_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TORCH_SUFFIX)
-TORCH_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TORCH_SUFFIX)
-TORCH_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(TORCH_SUFFIX)
+TORCH_IMAGE_NAME		?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(TORCH_SUFFIX)
+TORCH_AMD_IMAGE_NAME	?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(TORCH_SUFFIX)
+TORCH_CPU_IMAGE_NAME	?= $(CPU_IMAGE_NAME)-$(TORCH_SUFFIX)
 
-VLLM_IMAGE_NAME ?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(VLLM_SUFFIX)
-VLLM_AMD_IMAGE_NAME ?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(VLLM_SUFFIX)
-VLLM_CPU_IMAGE_NAME ?= $(CPU_IMAGE_NAME)-$(VLLM_SUFFIX)
+VLLM_IMAGE_NAME			?= $(NVIDIA_IMAGE_NAME)-$(CUDA_VERSION)-$(VLLM_SUFFIX)
+VLLM_AMD_IMAGE_NAME		?= $(AMD_IMAGE_NAME)-$(ROCM_VERSION)-$(VLLM_SUFFIX)
+VLLM_CPU_IMAGE_NAME		?= $(CPU_IMAGE_NAME)-$(VLLM_SUFFIX)
 
 # Image tag definitions (clean and extensible)
-BASE_TAG ?= latest
-TORCH_TAG ?= latest
-TRITON_TAG ?= latest
-VLLM_TAG ?= latest
+BASE_TAG				?= latest
+TORCH_TAG				?= latest
+TRITON_TAG				?= latest
+VLLM_TAG				?= latest
+
+# ------------------------------------------------------------------------------
+# Build and runtime arguments 
+# ------------------------------------------------------------------------------
+PYTHON_VERSION			?= 3.12
+CUDA_VERSION			?= 12-9
+ROCM_VERSION			?= 6.3.3
+
+MAX_JOBS				?= $(shell nproc --all)
+NOTEBOOK_PORT			?= 8888
+INSTALL_NSIGHT			?= false
+INSTALL_TOOLS			?= false
+
+# Options: source | release | skip
+INSTALL_TRITON			?= skip
+INSTALL_TORCH			?= skip
+INSTALL_VLLM			?= skip
+
+# ------------------------------------------------------------------------------
+# Runtime configuration
+# ------------------------------------------------------------------------------
+RUNTIME_ARGS			?=
+
+# Framework versions to install from PyPi (latest is default for Torch)
+TORCH_VERSION			?= $(shell curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
+TRITON_VERSION			?=
+VLLM_VERSION			?=
+
+# Device indices (NVIDIA and AMD)
+CUDA_VISIBLE_DEVICES	?=
+ROCR_VISIBLE_DEVICES	?=
+
+# Source code paths
+llvm_path				?=
+torch_path				?=
+triton_path				?= $(source_dir)
+user_path				?=
+vllm_path				?=
+
+# Wheel url for PyTorch
+torch_index_url			?= https://download.pytorch.org/whl
+
+# Torch backend selector for UV [ cu<cuda version> | rocm<rocm version> | cpu ]
+torch_backend			?=
+
+# Wheel url for vLLM
+vllm_extra_index_url	?=
+
+# vLLM repo commit hash for specific wheel build install
+vllm_commit				?=
+
+create_user				?= $(USER)
 
 .PHONY: all
 all: build-images
@@ -194,8 +213,44 @@ ifeq ($(INSTALL_NSIGHT),true)
 	INSTALL_TOOLS = true
 endif
 
-ifeq ($(INSTALL_TOOLS), true)
+ifeq ($(INSTALL_TOOLS),true)
 	RUNTIME_ARGS += -d
+endif
+
+ifneq ($(TORCH_VERSION), )
+	RUNTIME_ARGS += -o TORCH_VERSION=$(TORCH_VERSION)
+endif
+
+ifneq ($(TRITON_VERSION), )
+	RUNTIME_ARGS += -o TRITON_VERSION=$(TRITON_VERSION)
+endif
+
+ifneq ($(VLLM_VERSION), )
+	RUNTIME_ARGS += -o VLLM_VERSION=$(VLLM_VERSION)
+endif
+
+ifneq ($(CUDA_VISIBLE_DEVICES), )
+	RUNTIME_ARGS += -o CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES)
+endif
+
+ifneq ($(ROCR_VISIBLE_DEVICES), )
+	RUNTIME_ARGS += -o ROCR_VISIBLE_DEVICES=$(ROCR_VISIBLE_DEVICES)
+endif
+
+ifneq ($(torch_index_url), )
+	RUNTIME_ARGS += -o TORCH_INDEX_URL=$(torch_index_url)
+endif
+
+ifneq ($(torch_backend), )
+	RUNTIME_ARGS += -o TORCH_BACKEND=$(torch_backend)
+endif
+
+ifneq ($(vllm_extra_index_url), )
+	RUNTIME_ARGS += -o VLLM_EXTRA_INDEX_URL=$(vllm_extra_index_url)
+endif
+
+ifneq ($(vllm_commit), )
+	RUNTIME_ARGS += -o VLLM_COMMIT=$(vllm_commit)
 endif
 
 ifneq ($(create_user), )

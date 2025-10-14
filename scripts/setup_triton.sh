@@ -37,7 +37,7 @@ setup_src() {
 	fi
 
 	if [ ! -d "$TRITON_DIR" ]; then
-		echo "# Cloning the triton repo $TRITON_REPO to $TRITON_DIR ..."
+		echo "Cloning the triton repo $TRITON_REPO to $TRITON_DIR ..."
 		git clone "$TRITON_REPO" "$TRITON_DIR"
 		if [ ! -d "$TRITON_DIR" ]; then
 			echo "$TRITON_DIR not found. ERROR Cloning repository..."
@@ -46,7 +46,7 @@ setup_src() {
 			CLONED=1
 		fi
 	else
-		echo "# Triton repo already present, not cloning ..."
+		echo "Triton repo already present, not cloning ..."
 	fi
 
 	export TRITON_DIR
@@ -61,7 +61,7 @@ setup_src() {
 			git checkout $TRITON_GITREF
 		fi
 
-		echo "# Installing pre-commit dependencies ..."
+		echo "Installing pre-commit dependencies ..."
 		uv pip install pre-commit
 		pre-commit install
 	fi
@@ -70,7 +70,7 @@ setup_src() {
 }
 
 install_build_deps() {
-	echo "# Installing triton build dependencies ..."
+	echo "Installing triton build dependencies ..."
 	pushd "$TRITON_DIR" 1>/dev/null || exit 1
 
 	if [ -f python/requirements.txt ]; then
@@ -89,21 +89,21 @@ EOF
 }
 
 install_deps() {
-	echo "# Installing triton dependencies ..."
+	echo "Installing triton dependencies ..."
 	uv pip install cmake ctypeslib2 matplotlib ninja \
 		numpy pandas pybind11 pytest pyyaml scipy tabulate wheel
 
-	echo "# Installing triton proton dependencies ..."
+	echo "Installing triton proton dependencies ..."
 	uv pip install llnl-hatchet
 }
 
 install_src() {
 	pushd "$TRITON_DIR" 1>/dev/null || exit 1
 	if [ -n "${LLVM_BUILD_PATH:-}" ]; then
-		info "Building and installing llvm and triton ..."
+		echo "Building and installing llvm and triton ..."
 		make dev-install-llvm
 	else
-		info "Building and installing triton ..."
+		echo "Building and installing triton ..."
 		uv pip install -e .
 	fi
 
@@ -112,38 +112,40 @@ install_src() {
 
 install_release() {
 	if [ -n "${TORCH_BACKEND:-}" ]; then
-		echo "# Using specified torch backend, ${TORCH_BACKEND}"
+		echo "Using specified torch backend, $TORCH_BACKEND"
 	elif [ -n "${ROCM_VERSION:-}" ]; then
-		echo "# Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
 		TORCH_BACKEND=rocm${ROCM_VERSION%.*}
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
-		echo "# Using the torch CPU backend"
+		echo "Using the torch CPU backend"
 		TORCH_BACKEND=cpu
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "# Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
 		TORCH_BACKEND=cu${CUDA_VERSION//-/}
 	else
-		echo "# Using the torch auto backend"
+		echo "Using the torch auto backend"
 		TORCH_BACKEND=auto
 	fi
 
 	if [ -n "${TRITON_VERSION:-}" ]; then
-		echo "# Specified Triton version ${TRITON_VERSION}"
+		echo "Specified Triton version $TRITON_VERSION"
 		TRITON_VERSION="==$TRITON_VERSION"
 	fi
 
 	uv pip install triton${TRITON_VERSION:-} \
-		--torch-backend=${TORCH_BACKEND}
+		--torch-backend=$TORCH_BACKEND
 
 	# Fix up LD_LIBRARY_PATH for CUDA
 	./ldpretend.sh
 }
 
 usage() {
-	printf "Usage: %s [COMMAND]\n" "$(basename "$0")"
-	printf "\tsource\t\tDownload Triton's source (if needed) and install the build deps\n"
-	printf "\tinstall\t\tBuild and install Triton from source\n"
-	printf "\trelease\t\tInstall Triton\n"
+	cat >&2 <<EOF
+Usage: $(basename "$0") [COMMAND]
+    source     Download Triton's source (if needed) and install the build deps
+    install    Build and install Triton from source
+    release    Install Triton
+EOF
 }
 
 ##
@@ -154,20 +156,20 @@ COMMAND=${1,,}
 
 case $COMMAND in
 source)
-	echo "## Setting up the environment for building Triton from source..."
+	echo "Setting up the environment for building Triton from source..."
 	setup_src
 	install_build_deps
 	install_deps
 	;;
 install)
-	echo "## Building and installing Triton from source ..."
+	echo "Building and installing Triton from source ..."
 	setup_src
 	install_build_deps
 	install_src
 	install_deps
 	;;
 release)
-	echo "## Installing Triton ..."
+	echo "Installing Triton ..."
 	install_release
 	install_deps
 	;;

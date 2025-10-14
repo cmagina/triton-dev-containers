@@ -23,23 +23,14 @@ ARG UBI_VERSION
 ARG PYTHON_VERSION=3.12
 ARG WORKSPACE=/workspace
 
-ARG INSTALL_JUPYTER=true
-ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=skip
-ARG INSTALL_TRITON=skip
-ARG INSTALL_VLLM=skip
-
 USER 0
 
 ARG EPEL_REPO=https://dl.fedoraproject.org/pub/epel/epel-release-latest-${UBI_VERSION}.noarch.rpm
 RUN rpm -ivh $EPEL_REPO && \
     rpm -ql epel-release && \
     /usr/bin/crb enable && \
-    dnf -y install ccache && \
-    dnf clean all && rm -rf /var/cache/dnf
-
-RUN dnf update -y && \
-    dnf -y install clang cmake git lld llvm llvm-libs libomp libomp-devel \
+    dnf -y update && \
+    dnf -y install ccache clang cmake git lld llvm llvm-libs libomp libomp-devel \
     ninja-build openblas openblas-devel python${PYTHON_VERSION}-devel \
     python${PYTHON_VERSION}-pip && \
     dnf clean all && rm -rf /var/cache/dnf
@@ -66,11 +57,6 @@ ENV BASH_ENV=${WORKSPACE}/bin/activate \
     TRITON_BUILD_WITH_CCACHE=true \
     TRITON_CACHE_DIR=${WORKSPACE}/.triton/cache \
     TRITON_HOME=$WORKSPACE \
-    INSTALL_JUPYTER=$INSTALL_JUPYTER \
-    INSTALL_LLVM=$INSTALL_LLVM \
-    INSTALL_TORCH=$INSTALL_TORCH \
-    INSTALL_TRITON=$INSTALL_TRITON \
-    INSTALL_VLLM=$INSTALL_VLLM \
     UBI_VERSION=$UBI_VERSION \
     WORKSPACE=$WORKSPACE
 
