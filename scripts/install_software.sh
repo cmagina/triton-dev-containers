@@ -64,15 +64,15 @@ EOF
 install_tools() {
 	if [ ! -f "flash_attention.py" ]; then
 		echo "Downloading a test flash attention triton kernel ..."
-		curl -o $(basename $DEMO_FLASH_ATTN_KERNEL) $DEMO_FLASH_ATTN_KERNEL
+		curl -o "$(basename $DEMO_FLASH_ATTN_KERNEL)" $DEMO_FLASH_ATTN_KERNEL
 	fi
 
-	if command ccache &>/dev/null; then
+	if [ ${USE_CCACHE:-0} -ne 0 ]; then
 		echo "Adding CCACHE environment variables to ${HOME}/.bashrc ..."
-		tee -a ${HOME}/.bashrc <<EOF
+		tee -a "${HOME}"/.bashrc <<EOF
 
 # Enable CCACHE use
-export USE_CCACHE=1
+export CCACHE_DIR=${WORKSPACE}/.cache/ccache
 export CCACHE_NOHASHDIR="true"
 EOF
 	fi

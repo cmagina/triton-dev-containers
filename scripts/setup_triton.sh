@@ -20,7 +20,6 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 set -euo pipefail
 
 CLONED=0
-
 WORKSPACE=${WORKSPACE:-${HOME}}
 
 setup_src() {
@@ -77,11 +76,12 @@ install_build_deps() {
 		uv pip install -r python/requirements.txt
 	fi
 
-	if command ccache &>/dev/null; then
-		tee -a $HOME/.bashrc <<EOF
+	if [ ${USE_CCACHE:-0} -ne 0 ]; then
+		tee -a "${HOME}"/.bashrc <<EOF
 
-# Enable CCACHE use for Triton build
+# Use ccache when building Triton
 TRITON_BUILD_WITH_CCACHE=true
+TRITON_CACHE_DIR=${WORKSPACE}/.triton/cache
 EOF
 	fi
 
@@ -99,6 +99,11 @@ install_deps() {
 
 install_src() {
 	pushd "$TRITON_DIR" 1>/dev/null || exit 1
+
+	# Ensure LLVM_BUILD_PATH is present if it was added to the user bashrc
+	# by setup_llvm
+	source ${HOME}/.bashrc
+
 	if [ -n "${LLVM_BUILD_PATH:-}" ]; then
 		echo "Building and installing llvm and triton ..."
 		make dev-install-llvm
@@ -151,6 +156,11 @@ EOF
 ##
 ## Main
 ##
+
+if [ $# -ne 1 ]; then
+	usage
+	exit -1
+fi
 
 COMMAND=${1,,}
 

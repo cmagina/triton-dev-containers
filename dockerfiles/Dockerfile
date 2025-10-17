@@ -23,6 +23,12 @@ ARG UBI_VERSION
 ARG PYTHON_VERSION=3.12
 ARG WORKSPACE=/workspace
 
+ARG INSTALL_JUPYTER=true
+ARG INSTALL_LLVM=skip
+ARG INSTALL_TORCH=skip
+ARG INSTALL_TRITON=skip
+ARG INSTALL_VLLM=skip
+
 USER 0
 
 ARG EPEL_REPO=https://dl.fedoraproject.org/pub/epel/epel-release-latest-${UBI_VERSION}.noarch.rpm
@@ -30,9 +36,9 @@ RUN rpm -ivh $EPEL_REPO && \
     rpm -ql epel-release && \
     /usr/bin/crb enable && \
     dnf -y update && \
-    dnf -y install ccache clang cmake git lld llvm llvm-libs libomp libomp-devel \
-    ninja-build openblas openblas-devel python${PYTHON_VERSION}-devel \
-    python${PYTHON_VERSION}-pip && \
+    dnf -y install ccache clang cmake git glibc-langpack-en libxml2-devel \
+    lld llvm llvm-libs libomp libomp-devel ninja-build openblas openblas-devel \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip zlib-devel && \
     dnf clean all && rm -rf /var/cache/dnf
 
 COPY --from=quay.io/triton-dev-containers/gosu /usr/local/bin/gosu /usr/local/bin/gosu
@@ -45,20 +51,24 @@ RUN python${PYTHON_VERSION} -m pip install uv && \
     chmod -R 777 $WORKSPACE
 
 ENV BASH_ENV=${WORKSPACE}/bin/activate \
-    CCACHE_DIR=${WORKSPACE}/.cache/ccache \
     ENV=${WORKSPACE}/bin/activate \
+    INSTALL_JUPYTER=$INSTALL_JUPYTER \
+    INSTALL_LLVM=$INSTALL_LLVM \
+    INSTALL_TORCH=$INSTALL_TORCH \
+    INSTALL_TRITON=$INSTALL_TRITON \
+    INSTALL_VLLM=$INSTALL_VLLM \
+    LANG=en_US.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=${WORKSPACE}/bin:$PATH \
+    PIP_PREFIX=$WORKSPACE \
     PROMPT_COMMAND=". ${WORKSPACE}/bin/activate" \
     PYTHON_VERSION=$PYTHON_VERSION \
-    PATH=${WORKSPACE}/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    PIP_PREFIX=$WORKSPACE \
     PYTHONPATH=${WORKSPACE}/lib/python${PYTHON_VERSION}/site-packages \
-    XDG_CACHE_HOME=$WORKSPACE \
-    TRITON_BUILD_WITH_CCACHE=true \
-    TRITON_CACHE_DIR=${WORKSPACE}/.triton/cache \
     TRITON_HOME=$WORKSPACE \
     UBI_VERSION=$UBI_VERSION \
-    WORKSPACE=$WORKSPACE
+    WORKSPACE=$WORKSPACE \
+    XDG_CACHE_HOME=$WORKSPACE
 
 RUN tee -a "${HOME}/.bashrc" <<EOF
 export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH

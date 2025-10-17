@@ -79,6 +79,11 @@ EOF
 ## Main
 ##
 
+if [ $# -ne 1 ]; then
+	usage
+	exit -1
+fi
+
 COMMAND=${1,,}
 
 case $COMMAND in

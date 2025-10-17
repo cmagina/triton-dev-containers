@@ -25,78 +25,118 @@ set -euo pipefail
 # the user as --user $(USER) to start the container as that user.
 
 # Global Default Variables
-image_repo=quay.io/triton-dev-containers
-image_tag=latest
-framework=triton
+IMAGE_REPO=quay.io/triton-dev-containers
+IMAGE_TAG=latest
 
 ## Image versions
-ubi_version=9
-cuda_version=12-9
-rocm_version=6.3.3
+UBI_VERSION=9
+CUDA_VERSION=12-8
+ROCM_VERSION=6.3.3
 
-gitconfig_path="${HOME}/.gitconfig"
-rocr_devices=${ROCR_VISIBLE_DEVICES:-0}
+GITCONFIG_PATH="${HOME}/.gitconfig"
+CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+ROCR_VISIBLE_DEVICES=${ROCR_VISIBLE_DEVICES:-0}
 
 # PyPi Index URLs
-torch_index_url=https://download.pytorch.org/whl
+TORCH_INDEX_URL=https://download.pytorch.org/whl
 
 ## Jupyter notebook
-jupyter_notebook=false
-default_port=8888
+INSTALL_JUPYTER=true
+DEFAULT_PORT=8888
 
 ## Image modifiers
-dbg_tools=false
-max_jobs=$(nproc --all)
+MAX_JOBS=${MAX_JOBS:-$(nproc --all)}
+USE_CCACHE=1
+
+## Adds --rm to the runtime args
+DELETE_ON_EXIT=false
 
 # Container runtime command option arrays
-declare -a ctr_env_opts
-declare -a ctr_device_opts
-declare -a ctr_security_opts
-declare -a ctr_volume_opts
+declare -a CTR_ENV_OPTS
+declare -a CTR_DEVICE_OPTS
+declare -a CTR_SECURITY_OPTS
+declare -a CTR_VOLUME_OPTS
+
+declare -A OPTS=(
+	["INSTALL_JUPYTER"]="true | false"
+	["INSTALL_TOOLS"]="true | false"
+	["INSTALL_LLVM"]="source | skip"
+	["INSTALL_TORCH"]="nightly | release | source | test | skip"
+	["INSTALL_TRITON"]="release | source | skip"
+	["INSTALL_VLLM"]="nightly | release | source | skip"
+)
 
 usage() {
 	cat >&2 <<EOF
 Usage: ${0##*/} [OPTION]... DEVICE
     DEVICE                   Target device [ amd | cpu | nvidia ]
 Options
-    -d                       Install debugging and analysis tools (i.e. NVIDIA Nsight, ROCm Systems)
-    -f FRAMEWORK             Image for specific framework dev (Default: $framework) 
-                                 [ triton* | torch | vllm ]
-    -j MAX_JOBS              Maximum number of jobs to use when building Triton/PyTorch/vLLM (Default: $max_jobs)
-    -o OPTION=ARGUMENT       Specify a value for an option
-        UBI_VERSION              Ubi image version (Default: $ubi_version)
-        CUDA_VERSION             CUDA version (Default: $cuda_version)
-        ROCM_VERSION             ROCm version (Default: $rocm_version)
-        TRITON_VERSION           Triton wheel version
-        TORCH_VERSION            Torch wheel version
-        VLLM_VERSION             vLLM wheel version
+    -c REMOTE_CONNECTION     Use the remote podman system
+    -d                       Remove the container on exit
+    -j MAX_JOBS              Maximum number of jobs to use when building Triton/PyTorch/vLLM (Default: $MAX_JOBS)
+    -o OPTION=ARGUMENT       Specify a argument for an option
+        CUDA_VERSION             CUDA version (Default: $CUDA_VERSION)
         CUDA_VISIBLE_DEVICES     List of NVIDIA device indices (i.e. 0,2)
+        GITCONFIG                /path/to/.gitconfig (Default: $GITCONFIG_PATH)
+        INSTALL_JUPYTER          Install the Jupyter notebook server
+                                     [ ${OPTS["INSTALL_JUPYTER"]} ]
+        INSTALL_TOOLS            Install debugging and profiling tools (i.e. NSIGHT or ROCm Systems)
+                                     [ ${OPTS["INSTALL_TOOLS"]} ]
+        INSTALL_LLVM             Setup the container to build LLVM from source
+                                     [ ${OPTS["INSTALL_LLVM"]} ]
+        INSTALL_TORCH            Install or setup the container for building PyTorch
+                                     [ ${OPTS["INSTALL_TORCH"]} ]
+        INSTALL_TRITON           Install or setup the container for building Triton
+                                     [ ${OPTS["INSTALL_TRITON"]} ]
+        INSTALL_VLLM             Install or setup the container for building vLLM
+                                     [ ${OPTS["INSTALL_VLLM"]} ]
+        ROCM_VERSION             ROCm version (Default: $ROCM_VERSION)
         ROCR_VISIBLE_DEVICES     List of AMD device indices or UUIDs (i.e. 0,GPU-DEADBEEFDEADBEEF)
-        GITCONFIG                /path/to/.gitconfig (Default: $gitconfig_path)
-        TORCH_INDEX_URL          http://<url> (Default: $torch_index_url)
-        TORCH_BACKEND            Framwork version: [ cu${cuda_version//-/} | rocm${rocm_version%.*} | cpu ]
-        VLLM_EXTRA_INDEX_URL     http://<url> (Not used with VLLM_COMMIT)
+        TORCH_BACKEND            Framwork version: [ cu${CUDA_VERSION//-/} | rocm${ROCM_VERSION%.*} | cpu ]
+        TORCH_INDEX_URL          http://<url> (Default: $TORCH_INDEX_URL)
+        TORCH_VERSION            Torch wheel version
+        TRITON_VERSION           Triton wheel version
+        UBI_VERSION              Ubi image version (Default: $UBI_VERSION)
+        USE_CCACHE               Enable ccache [ 0 | 1 ] (Default: $USE_CCACHE)
         VLLM_COMMIT              vLLM git commit hash for wheel install (https://wheels.vllm.ai/<commit>)
-    -p [ DEFAULT | PORT ]    Expose the specified port for the Jupyter notebook server (Default: $default_port)
-    -r IMAGE_REPO            Image repository (Default: $image_repo)
+        VLLM_EXTRA_INDEX_URL     http://<url> (Not used with VLLM_COMMIT)
+        VLLM_VERSION             vLLM wheel version
+    -p [ DEFAULT | PORT ]    Expose the specified port for the Jupyter notebook server (Default: $DEFAULT_PORT)
+    -r IMAGE_REPO            Image repository (Default: $IMAGE_REPO)
     -s SOURCE=PATH           Local source directories to mount as volumes
         LLVM                     /path/to/llvm/source
         TORCH                    /path/to/torch/source
         TRITON                   /path/to/triton/source
         USER                     /path/to/user/source
         VLLM                     /path/to/vllm/source
-    -t IMAGE_TAG             Image tag (Default: $image_tag)
+    -t IMAGE_TAG             Image tag (Default: $IMAGE_TAG)
     -u USERNAME              Username to use inside the image
     -h                       Print usage
     -v                       Verbose
 EOF
 }
 
+set_env_var() {
+	local key=$1
+	local value=$2
+
+	if [[ ! "${CTR_ENV_OPTS[*]}" =~ $key ]]; then
+		if [[ "${!OPTS[*]}" =~ $key ]]; then
+			if [[ ! "${OPTS[$key]}" =~ $value ]]; then
+				echo "Bad option, $value, for $key, can only be ${OPTS[$key]}"
+				exit 1
+			fi
+		fi
+
+		CTR_ENV_OPTS+=("-e $key=$value")
+	fi
+}
+
 set_container_runtime() {
 	if command -v podman &>/dev/null; then
-		ctr_cmd=podman
+		CTR_CMD=podman
 	elif command -v docker &>/dev/null; then
-		ctr_cmd=docker
+		CTR_CMD=docker
 	else
 		echo "Could not find the podman or docker container runtime."
 		echo "Please install one of them."
@@ -104,32 +144,19 @@ set_container_runtime() {
 	fi
 }
 
-set_environment() {
-	ctr_env_opts+=(
-		"-e TORCH_INDEX_URL=$torch_index_url"
-		"-e TORCH_BACKEND=$torch_backend"
-	)
-
-	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
-		ctr_env_opts+=("-e VLLM_EXTRA_INDEX_URL=$VLLM_EXTRA_INDEX_URL")
-	fi
-
-	if [ -n "${VLLM_COMMIT:-}" ]; then
-		ctr_env_opts+=("-e VLLM_COMMIT=$VLLM_COMMIT")
-	fi
-}
-
 setup_volumes() {
+	local selinux_flag
+
 	# Set selinux volume flag if enforcing
 	if command -v getenforce &>/dev/null && [ "$(getenforce 2>/dev/null)" == "Enforcing" ]; then
 		selinux_flag=:z
 	fi
 
 	# Custom LLVM source code path
-	if [ -n "${llvm_path:-}" ]; then
-		if [ -d "${llvm_path:-}" ]; then
-			ctr_volume_opts+=("-v ${llvm_path}:/workspace/llvm-project${selinux_flag:-}")
-			ctr_env_opts+=("-e INSTALL_LLVM=source")
+	if [ -n "${LLVM_PATH:-}" ]; then
+		if [ -d "${LLVM_PATH:-}" ]; then
+			CTR_VOLUME_OPTS+=("-v ${LLVM_PATH}:/workspace/llvm-project${selinux_flag:-}")
+			set_env_var INSTALL_LLVM source
 		else
 			echo "Specified LLVM path does not exist."
 			exit 1
@@ -137,10 +164,10 @@ setup_volumes() {
 	fi
 
 	# Triton Lang source code path
-	if [ -n "${triton_path:-}" ]; then
-		if [ -d "${triton_path:-}" ]; then
-			ctr_volume_opts+=("-v ${triton_path}:/workspace/triton${selinux_flag:-}")
-			ctr_env_opts+=("-e INSTALL_TRITON=source")
+	if [ -n "${TRITON_PATH:-}" ]; then
+		if [ -d "${TRITON_PATH:-}" ]; then
+			CTR_VOLUME_OPTS+=("-v ${TRITON_PATH}:/workspace/triton${selinux_flag:-}")
+			set_env_var INSTALL_TRITON source
 		else
 			echo "Specified triton path does not exist."
 			exit 1
@@ -148,10 +175,10 @@ setup_volumes() {
 	fi
 
 	# PyTorch source code path
-	if [ -n "${torch_path:-}" ]; then
-		if [ -d "${torch_path:-}" ]; then
-			ctr_volume_opts+=("-v ${torch_path}:/workspace/torch${selinux_flag:-}")
-			ctr_env_opts+=("-e INSTALL_TORCH=source")
+	if [ -n "${TORCH_PATH:-}" ]; then
+		if [ -d "${TORCH_PATH:-}" ]; then
+			CTR_VOLUME_OPTS+=("-v ${TORCH_PATH}:/workspace/torch${selinux_flag:-}")
+			set_env_var INSTALL_TORCH source
 		else
 			echo "Specified torch path does not exist."
 			exit 1
@@ -159,10 +186,10 @@ setup_volumes() {
 	fi
 
 	# vLLM source code path
-	if [ -n "${vllm_path:-}" ]; then
-		if [ -d "${vllm_path:-}" ]; then
-			ctr_volume_opts+=("-v ${vllm_path}:/workspace/vllm${selinux_flag:-}")
-			ctr_env_opts+=("-e INSTALL_VLLM=source")
+	if [ -n "${VLLM_PATH:-}" ]; then
+		if [ -d "${VLLM_PATH:-}" ]; then
+			CTR_VOLUME_OPTS+=("-v ${VLLM_PATH}:/workspace/vllm${selinux_flag:-}")
+			set_env_var INSTALL_VLLM source
 		else
 			echo "Specified vllm path does not exist."
 			exit 1
@@ -170,9 +197,9 @@ setup_volumes() {
 	fi
 
 	# Add a user path if one is specified (should verify it exists)
-	if [ -n "${user_path:-}" ]; then
-		if [ -d "${user_path:-}" ]; then
-			ctr_volume_opts+=("-v ${user_path}:/workspace/user${selinux_flag:-}")
+	if [ -n "${USER_PATH:-}" ]; then
+		if [ -d "${USER_PATH:-}" ]; then
+			CTR_VOLUME_OPTS+=("-v ${USER_PATH}:/workspace/user${selinux_flag:-}")
 		else
 			echo "Specified user path does not exist."
 			exit 1
@@ -180,61 +207,55 @@ setup_volumes() {
 	fi
 
 	# User management for non-Mac OS's
-	if [ "$(uname -s)" != "Darwin" ] && ! getent passwd "$USER" >/dev/null && [ -n "${username:-}" ]; then
-		ctr_volume_opts+=("-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro")
+	if [ "$(uname -s)" != "Darwin" ] && ! getent passwd "$USER" >/dev/null && [ -n "${USERNAME:-}" ]; then
+		CTR_VOLUME_OPTS+=("-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro")
 	fi
 
 	# Gitconfig
-	if [ -f "${gitconfig_path:-}" ]; then
-		ctr_volume_opts+=("-v ${gitconfig_path}:/etc/gitconfig${selinux_flag:-}")
+	if [ -f "${GITCONFIG_PATH:-}" ]; then
+		CTR_VOLUME_OPTS+=("-v ${GITCONFIG_PATH}:/etc/gitconfig${selinux_flag:-}")
 	fi
 }
 
 set_device_opts() {
-	case $target_device in
+	case $TARGET_DEVICE in
 	amd)
-		ctr_device_opts+=(
+		CTR_DEVICE_OPTS+=(
 			"--device=/dev/kfd"
 			"--device=/dev/dri"
 		)
-		ctr_security_opts+=(
+		CTR_SECURITY_OPTS+=(
 			"--cap-add=SYS_PTRACE"
 			"--group-add=video"
 			"--ipc=host"
 			"--security-opt seccomp=unconfined"
 		)
-		ctr_env_opts+=(
-			"-e ROCR_VISIBLE_DEVICES=${rocr_devices}"
-		)
 
-		image_name=${image_name}-${rocm_version}
+		set_env_var ROCR_VISIBLE_DEVICES "$ROCR_VISIBLE_DEVICES"
+
+		IMAGE_NAME=${IMAGE_NAME}-${ROCM_VERSION}
 		;;
 	nvidia)
 		if command -v nvidia-ctk >/dev/null 2>&1 && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"; then
-			ctr_device_opts+=("--device nvidia.com/gpu=all")
+			CTR_DEVICE_OPTS+=("--device nvidia.com/gpu=all")
 		else
-			ctr_device_opts+=("--runtime=nvidia --gpus=all")
+			CTR_DEVICE_OPTS+=("--runtime=nvidia --gpus=all")
 		fi
 
-		ctr_security_opts+=("--security-opt label=disable")
+		CTR_SECURITY_OPTS+=("--security-opt label=disable")
 
-		if [ "$dbg_tools" = "true" ]; then
-			ctr_env_opts+=(
-				"-e INSTALL_TOOLS=true"
-			)
-
-			ctr_security_opts+=(
+		if [ "${INSTALL_TOOLS:-}" = "true" ]; then
+			CTR_SECURITY_OPTS+=(
 				"--privileged"
 				"--cap-add=SYS_ADMIN"
 			)
 
 			if [ -n "${DISPLAY:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
-				ctr_env_opts+=(
-					"-e DISPLAY=${DISPLAY}"
-					"-e WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
-					"-e XDG_RUNTIME_DIR=/tmp"
-				)
-				ctr_volume_opts+=(
+				set_env_var DISPLAY "$DISPLAY"
+				set_env_var WAYLAND_DISPLAY "$WAYLAND_DISPLAY"
+				set_env_var XDG_RUNTIME_DIR /tmp
+
+				CTR_VOLUME_OPTS+=(
 					"-v ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/tmp/${WAYLAND_DISPLAY}:ro"
 				)
 			else
@@ -242,28 +263,26 @@ set_device_opts() {
 			fi
 		fi
 
-		image_name=${image_name}-${cuda_version}
+		IMAGE_NAME=${IMAGE_NAME}-${CUDA_VERSION}
 		;;
 	esac
 }
 
 set_user_args() {
-	if [ -z "${username:-}" ] && [ "$(whoami)" != "root" ]; then
-		username=$(whoami)
+	if [ -z "${USERNAME:-}" ] && [ "$(whoami)" != "root" ]; then
+		USERNAME=$(whoami)
 	fi
 
-	if [ -n "${username:-}" ] && [ "${username:-}" != "root" ]; then
-		ctr_args=(
-			"-e USER=$username"
-			"-e USER_UID=$(id -u "$USER")"
-			"-e USER_GID=$(id -g "$USER")"
-		)
-	elif [ "$(basename "$ctr_cmd")" = "docker" ]; then
-		ctr_args=(
+	if [ -n "${USERNAME:-}" ] && [ "${USERNAME:-}" != "root" ]; then
+		set_env_var USER "$USERNAME"
+		set_env_var USER_UID "$(id -u "$USER")"
+		set_env_var USER_GID "$(id -g "$USER")"
+	elif [ "$(basename "$CTR_CMD")" = "docker" ]; then
+		CTR_ARGS=(
 			"--user $(id -u):$(id -g)"
 		)
-	elif [ "$(basename "$ctr_cmd")" = "podman" ]; then
-		ctr_args=(
+	elif [ "$(basename "$CTR_CMD")" = "podman" ]; then
+		CTR_ARGS=(
 			"--user $USER"
 		)
 	fi
@@ -273,33 +292,80 @@ set_user_args() {
 ## MAIN
 ##
 
-while getopts "c:df:j:o:p:r:s:t:u:hv" opt; do
+while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 	case "$opt" in
 	c)
-		remote_connection=$OPTARG
+		REMOTE_CONNECTION=$OPTARG
 		;;
 	d)
-		dbg_tools=true
-		;;
-	f)
-		framework=${OPTARG}
+		DELETE_ON_EXIT=true
 		;;
 	j)
-		max_jobs=$OPTARG
+		MAX_JOBS=$OPTARG
 		;;
 	o)
 		case "${OPTARG/=*/}" in
-		ubi_version | UBI_VERSION)
-			ubi_version="${OPTARG/*=/}"
-			;;
 		cuda_version | CUDA_VERSION)
-			cuda_version="${OPTARG/*=/}"
+			CUDA_VERSION="${OPTARG/*=/}"
+			set_env_var CUDA_VERSION "$CUDA_VERSION"
 			;;
-		rocm_version | ROCM_VERSION)
-			rocm_version="${OPTARG/*=/}"
+		cuda_visible_devices | CUDA_VISIBLE_DEVICES)
+			set_env_var CUDA_VISIBLE_DEVICES "${OPTARG/*=/}"
 			;;
 		gitconfig | GITCONFIG)
-			gitconfig_path="${OPTARG/*=/}"
+			GITCONFIG_PATH="${OPTARG/*=/}"
+			;;
+		install_jupyter | INSTALL_JUPYTER)
+			INSTALL_JUPYTER="${OPTARG/*=/}"
+			;;
+		install_tools | INSTALL_TOOLS)
+			set_env_var INSTALL_TOOLS "${OPTARG/*=/}"
+			;;
+		install_llvm | INSTALL_LLVM)
+			set_env_var INSTALL_LLVM "${OPTARG/*=/}"
+			;;
+		install_torch | INSTALL_TORCH)
+			set_env_var INSTALL_TORCH "${OPTARG/*=/}"
+			;;
+		install_triton | INSTALL_TRITON)
+			set_env_var INSTALL_TRITON "${OPTARG/*=/}"
+			;;
+		install_vllm | INSTALL_VLLM)
+			set_env_var INSTALL_VLLM "${OPTARG/*=/}"
+			;;
+		rocm_version | ROCM_VERSION)
+			ROCM_VERSION="${OPTARG/*=/}"
+			set_env_var ROCM_VERSION "$ROCM_VERSION"
+			;;
+		rorc_visible_devices | ROCR_VISIBLE_DEVICES)
+			set_env_var ROCR_VISIBLE_DEVICES "${OPTARG/*=/}"
+			;;
+		torch_backend | TORCH_BACKEND)
+			set_env_var TORCH_BACKEND "${OPTARG/*=/}"
+			;;
+		torch_version | TORCH_VERSION)
+			set_env_var TORCH_VERSION "${OPTARG/*=/}"
+			;;
+		torch_index_url | TORCH_INDEX_URL)
+			set_env_var TORCH_INDEX_URL "${OPTARG/*=/}"
+			;;
+		triton_version | TRITON_VERSION)
+			set_env_var TRITON_VERSION "${OPTARG/*=/}"
+			;;
+		ubi_version | UBI_VERSION)
+			UBI_VERSION="${OPTARG/*=/}"
+			;;
+		use_ccache | USE_CCACHE)
+			set_env_var USE_CCACHE "${OPTARG/*=/}"
+			;;
+		vllm_commit | VLLM_COMMIT)
+			set_env_var VLLM_COMMIT "${OPTARG/*=/}"
+			;;
+		vllm_extra_index_url | VLLM_EXTRA_INDEX_URL)
+			set_env_var VLLM_EXTRA_INDEX_URL "${OPTARG/*=/}"
+			;;
+		vllm_version | VLLM_VERSION)
+			set_env_var VLLM_VERSION "${OPTARG/*=/}"
 			;;
 		*)
 			echo "Unknown option ${OPTARG}."
@@ -308,32 +374,32 @@ while getopts "c:df:j:o:p:r:s:t:u:hv" opt; do
 		esac
 		;;
 	p)
-		jupyter_notebook=true
+		INSTALL_JUPYTER=true
 		if [ "${OPTARG^^}" = "AUTO" ]; then
-			jupyter_notebook_port=$default_port
+			JUPYTER_NOTEBOOK_PORT=$DEFAULT_PORT
 		else
-			jupyter_notebook_port=$OPTARG
+			JUPYTER_NOTEBOOK_PORT=$OPTARG
 		fi
 		;;
 	r)
-		image_repo=$OPTARG
+		IMAGE_REPO=$OPTARG
 		;;
 	s)
 		case "${OPTARG/=*/}" in
 		llvm | LLVM)
-			llvm_path="${OPTARG/*=/}"
-			;;
-		triton | TRITON)
-			triton_path="${OPTARG/*=/}"
+			LLVM_PATH="${OPTARG/*=/}"
 			;;
 		torch | TORCH)
-			torch_path="${OPTARG/*=/}"
+			TORCH_PATH="${OPTARG/*=/}"
+			;;
+		triton | TRITON)
+			TRITON_PATH="${OPTARG/*=/}"
 			;;
 		vllm | VLLM)
-			vllm_path="${OPTARG/*=/}"
+			VLLM_PATH="${OPTARG/*=/}"
 			;;
 		user | USER)
-			user_path="${OPTARG/*=/}"
+			USER_PATH="${OPTARG/*=/}"
 			;;
 		*)
 			echo "Unknown source path ${OPTARG}."
@@ -342,10 +408,10 @@ while getopts "c:df:j:o:p:r:s:t:u:hv" opt; do
 		esac
 		;;
 	t)
-		image_tag=$OPTARG
+		IMAGE_TAG=$OPTARG
 		;;
 	u)
-		username=$OPTARG
+		USERNAME=$OPTARG
 		;;
 	h)
 		usage
@@ -370,8 +436,8 @@ if [ -z "${1:-}" ]; then
 	exit 1
 fi
 
-target_device="${1:-}"
-image_name=ubi${ubi_version}-${target_device}
+TARGET_DEVICE="${1:-}"
+IMAGE_NAME=ubi${UBI_VERSION}-${TARGET_DEVICE}
 
 ##
 ## Command Configuration
@@ -387,35 +453,39 @@ setup_volumes
 set_device_opts
 
 # Runtime Arguments
-if [ "$(basename "$ctr_cmd")" = "podman" ]; then
-	ctr_security_opts+=("--userns=keep-id")
+if [ "$(basename "$CTR_CMD")" = "podman" ]; then
+	CTR_SECURITY_OPTS+=("--userns=keep-id")
 fi
 
 # Jupyter Notebook
-ctr_port_opt="-p ${jupyter_notebook_port:-$default_port}:${jupyter_notebook_port:-$default_port}"
-ctr_env_opts+=("-e NOTEBOOK_PORT=${jupyter_notebook_port:-$default_port}")
+if [ "${INSTALL_JUPYTER:-}" = "true" ]; then
+	CTR_PORT_OPT="-p ${JUPYTER_NOTEBOOK_PORT:-$DEFAULT_PORT}:${JUPYTER_NOTEBOOK_PORT:-$DEFAULT_PORT}"
+	set_env_var INSTALL_JUPYTER "$INSTALL_JUPYTER"
+	set_env_var NOTEBOOK_PORT "${JUPYTER_NOTEBOOK_PORT:-$DEFAULT_PORT}"
+fi
 
 # Environment Arguments
-# "-e TORCH_VERSION=$torch_version"
-ctr_env_opts+=(
-	"-e MAX_JOBS=$max_jobs"
-)
+set_env_var MAX_JOBS "$MAX_JOBS"
 
 # User args
 set_user_args
 
-ctr_args+=(
-	"${ctr_env_opts[@]:-}"
-	"${ctr_device_opts[@]:-}"
-	"${ctr_port_opt:-}"
-	"${ctr_security_opts[@]:-}"
-	"${ctr_volume_opts[@]:-}"
+CTR_ARGS+=(
+	"${CTR_ENV_OPTS[@]:-}"
+	"${CTR_DEVICE_OPTS[@]:-}"
+	"${CTR_PORT_OPT:-}"
+	"${CTR_SECURITY_OPTS[@]:-}"
+	"${CTR_VOLUME_OPTS[@]:-}"
 )
 
-if [ -n "${remote_connection:-}" ]; then
-	ctr_connection="-r -c $remote_connection"
+if [ -n "${REMOTE_CONNECTION:-}" ]; then
+	CTR_CONNECTION="-r -c $REMOTE_CONNECTION"
 fi
 
-printf "Running container image: %s/%s-%s:%s with %s\n" "$image_repo" "$image_name" "$framework" "$image_tag" "$ctr_cmd"
-printf "%s %s run -ti %s %s/%s-%s:%s bash\n" "$ctr_cmd" "${ctr_connection:-}" "${ctr_args[*]}" "$image_repo" "$image_name" "$framework" "$image_tag"
-$ctr_cmd ${ctr_connection:-} run -ti ${ctr_args[@]} "${image_repo}/${image_name}-${framework}:${image_tag}" bash
+if [ "${DELETE_ON_EXIT:-}" = "true" ]; then
+	CTR_ARGS+=("--rm")
+fi
+
+printf "Running container image: %s/%s:%s with %s\n" "$IMAGE_REPO" "$IMAGE_NAME" "$IMAGE_TAG" "$CTR_CMD"
+printf "%s %s run -ti %s %s/%s:%s bash\n" "$CTR_CMD" "${CTR_CONNECTION:-}" "${CTR_ARGS[*]}" "$IMAGE_REPO" "$IMAGE_NAME" "$IMAGE_TAG"
+$CTR_CMD ${CTR_CONNECTION:-} run -ti ${CTR_ARGS[@]} "${IMAGE_REPO}/${IMAGE_NAME}:${IMAGE_TAG}" bash

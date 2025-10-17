@@ -17,29 +17,11 @@
 ARG UBI_VERSION=9
 FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
 
-ARG CUDA_VERSION=12-9
-
-ARG INSTALL_JUPYTER=true
-ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=release
-ARG INSTALL_TRITON=source
-ARG INSTALL_VLLM=skip
-
 USER 0
 
-RUN dnf -y update && \
-    dnf -y install libglvnd-opengl libxkbfile \
-    qt5-qtwayland xcb-util-cursor && \
-    dnf clean all && rm -rf /var/cache/dnf
+ENV TRITON_CPU_BACKEND=1
 
-ENV CUDA_VERSION=$CUDA_VERSION \
-    INSTALL_JUPYTER=$INSTALL_JUPYTER \
-    INSTALL_LLVM=$INSTALL_LLVM \
-    INSTALL_TORCH=$INSTALL_TORCH \
-    INSTALL_TRITON=$INSTALL_TRITON \
-    INSTALL_VLLM=$INSTALL_VLLM
-
-COPY examples/flash_attention_demo.ipynb flash_attention_demo.ipynb
+COPY hack/triton-gpu-check.py triton-gpu-check.py
 
 COPY scripts/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

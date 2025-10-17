@@ -17,12 +17,6 @@
 ARG UBI_VERSION=9
 FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
 
-ARG INSTALL_JUPYTER=true
-ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=release
-ARG INSTALL_TRITON=source
-ARG INSTALL_VLLM=skip
-
 USER 0
 
 ARG ROCM_VERSION=6.3.3
@@ -36,7 +30,6 @@ RUN source /etc/os-release && \
 # Install the ROCm rpms
 RUN dnf -y install --nodocs --setopt=install_weak_deps=False \
     amd-smi-lib \
-    glibc-langpack-en \
     miopen-hip \
     rocm-core \
     rocm-hip-libraries \
@@ -46,15 +39,8 @@ RUN dnf -y install --nodocs --setopt=install_weak_deps=False \
 # Set environment variables for ROCm
 ENV ROCM_VERSION=$ROCM_VERSION \
     ROCM_PATH=/opt/rocm \
-    LANG=en_US.UTF-8 \
-    LC_ALL=C.UTF-8 \
     LD_LIBRARY_PATH=/usr/lib64:/usr/lib:/opt/rocm/lib:/opt/rocm/llvm/lib \
-    PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH \
-    INSTALL_JUPYTER=$INSTALL_JUPYTER \
-    INSTALL_LLVM=$INSTALL_LLVM \
-    INSTALL_TORCH=$INSTALL_TORCH \
-    INSTALL_TRITON=$INSTALL_TRITON \
-    INSTALL_VLLM=$INSTALL_VLLM
+    PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH
 
 COPY hack/triton-gpu-check.py triton-gpu-check.py
 COPY examples/triton-vector-add-rocm.py triton-vector-add-rocm.py

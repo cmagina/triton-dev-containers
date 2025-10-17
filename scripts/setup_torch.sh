@@ -66,10 +66,6 @@ setup_torch_src() {
 		pre-commit install
 	fi
 
-	if command ccache &>/dev/null; then
-		export USE_CCACHE=1
-	fi
-
 	popd 1>/dev/null
 }
 
@@ -106,10 +102,6 @@ setup_torchvision_src() {
 		pre-commit install
 	fi
 
-	if command ccache &>/dev/null; then
-		export USE_CCACHE=1
-	fi
-
 	popd 1>/dev/null
 }
 
@@ -132,7 +124,7 @@ install_build_deps() {
 }
 
 usage() {
-    cat >&2 <<EOF
+	cat >&2 <<EOF
 Usage: $(basename "$0") [COMMAND] 
     source     Download Torch's source (if needed) and install the build deps
     release    Install Torch
@@ -144,6 +136,11 @@ EOF
 ##
 ## Main
 ##
+
+if [ $# -ne 1 ]; then
+	usage
+	exit -1
+fi
 
 COMMAND=${1,,}
 
