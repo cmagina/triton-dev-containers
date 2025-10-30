@@ -23,56 +23,50 @@ CLONED=0
 
 WORKSPACE=${WORKSPACE:-${HOME}}
 
-VLLM_DIR=${WORKSPACE}/vllm
 VLLM_REPO=https://github.com/vllm-project/vllm.git
-
-FA_DIR=${WORKSPACE}/flash-attention
-FA_REPO="https://github.com/Dao-AILab/flash-attention.git"
-FA_GITREF="0e60e394"
-
-AITER_DIR=${WORKSPACE}/aiter
-AITER_REPO="https://github.com/ROCm/aiter.git"
-AITER_GITREF="eef23c7f"
-
+VLLM_DIR="${WORKSPACE}/vllm"
 VLLM_INDEX_URL_BASE=https://wheels.vllm.ai
-VLLM_HDR_MSG="Installing vLLM"
 
 setup_src() {
-	if [ ! -d "$VLLM_DIR" ]; then
+	if [ ! -d "${VLLM_DIR}" ]; then
 		echo "Cloning the vLLM repo $VLLM_REPO to $VLLM_DIR ..."
 		git clone "$VLLM_REPO" "$VLLM_DIR"
+
 		if [ ! -d "$VLLM_DIR" ]; then
 			echo "$VLLM_DIR not found. ERROR Cloning repository..."
 			exit 1
 		else
-			CLONED=1
+			pushd "$VLLM_DIR" 1>/dev/null || exit 1
+			git submodule sync
+			git submodule update --init --recursive
+
+			if [ -n "${VLLM_GITREF:-}" ]; then
+				git checkout $VLLM_GITREF
+			fi
+			popd 1>/dev/null
 		fi
 	else
 		echo "vLLM repo already present, not cloning ..."
 	fi
-
-	pushd "$VLLM_DIR" 1>/dev/null || exit 1
-
-	if [ "$CLONED" -eq 1 ]; then
-		git submodule sync
-		git submodule update --init --recursive
-
-		echo "Installing pre-commit dependencies ..."
-		uv pip install pre-commit
-		pre-commit install
-	fi
-
-	popd 1>/dev/null
 }
 
 install_build_deps() {
 	pushd "$VLLM_DIR" 1>/dev/null || exit 1
 
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		echo "Installing ROCm build dependencies ..."
-		if [ -e "/opt/rocm/share/amd_smi" ]; then
-			uv pip install /opt/rocm/share/amd_smi
+	if [ "${INSTALL_TORCH:-}" = "source" ]; then
+		echo "Using existing torch source build ..."
+		python use_existing_torch.py
+	fi
+
+	if [ -n "${CUDA_VERSION:-}" ]; then
+		VLLM_TARGET_DEVICE=cuda
+
+		if [ -e requirements/cuda.txt ]; then
+			echo "Installing vLLM CUDA build dependencies ..."
+			uv pip install --prerelease=allow -r requirements/cuda.txt
 		fi
+	elif [ -n "${ROCM_VERSION:-}" ]; then
+		VLLM_TARGET_DEVICE=rocm
 
 		uv pip install --upgrade numba \
 			scipy \
@@ -82,25 +76,32 @@ install_build_deps() {
 		uv pip install "numpy<2"
 
 		if [ -e requirements/rocm.txt ]; then
-			uv pip install -r requirements/rocm.txt
+			echo "Installing vLLM ROCm build dependencies ..."
+			uv pip install --prerelease=allow -r requirements/rocm.txt
 		fi
+	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+		VLLM_TARGET_DEVICE=cpu
 
-		tee -a ${HOME}/.bashrc >>EOF
-
-		# Build vLLM for MI210/MI250/MI300.
-		export PYTORCH_ROCM_ARCH="gfx90a;gfx942"
-		EOF
-	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "Installing CUDA build dependencies ..."
-		${SUDO:-} dnf -y install cuda-toolkit-${CUDA_VERSION}
+		if [ -e requirements/cpu.txt ]; then
+			echo "Installing vLLM CPU build dependencies ..."
+			uv pip install --prerelease=allow -r requirements/cpu.txt
+		fi
 	fi
 
 	if [ -f requirements/build.txt ]; then
-		echo "Installing vLLM dependencies ..."
-		uv pip install -r requirements/build.txt
+		echo "Installing vLLM build dependencies ..."
+		uv pip install --prerelease=allow -r requirements/build.txt
 	fi
 
 	popd 1>/dev/null
+
+	echo "Set the target device for vLLM build ..."
+	tee -a "${HOME}/.bashrc" <<EOF
+
+# Target device for vLLM build
+export VLLM_TARGET_DEVICE=$VLLM_TARGET_DEVICE
+EOF
+	echo "Run 'source ${HOME}/.bashrc' before building vLLM"
 }
 
 usage() {
@@ -135,17 +136,17 @@ source)
 	exit $?
 	;;
 release)
-	VLLM_HDR_MSG="$VLLM_HDR_MSG release"
-	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
-		VLLM_HDR_MSG="$VLLM_HDR_MSG from extra index url"
+	echo "Installing vLLM release ..."
+	if [ -n "${PIP_VLLM_EXTRA_INDEX_URL:-}" ]; then
+		echo "Using the extra index url $PIP_VLLM_EXTRA_INDEX_URL ..."
 	elif [ -n "${VLLM_COMMIT:-}" ]; then
-		VLLM_HDR_MSG="$VLLM_HDR_MSG commit $VLLM_COMMIT"
-		VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/${VLLM_COMMIT}"
+		echo "Using the build from commit $VLLM_COMMIT ..."
+		PIP_VLLM_EXTRA_INDEX_URL="--extra-index-url ${PIP_VLLM_INDEX_URL_BASE}/${VLLM_COMMIT}"
 	fi
 	;;
 nightly)
-	VLLM_HDR_MSG="$VLLM_HDR_MSG nightly"
-	VLLM_EXTRA_INDEX_URL="--extra-index-url ${VLLM_INDEX_URL_BASE}/nightly"
+	echo "Installing vLLM nightly ..."
+	PIP_VLLM_EXTRA_INDEX_URL="--extra-index-url ${PIP_VLLM_INDEX_URL_BASE}/nightly"
 	;;
 *)
 	usage
@@ -153,31 +154,30 @@ nightly)
 	;;
 esac
 
-echo "$VLLM_HDR_MSG ..."
-if [ -n "${TORCH_BACKEND:-}" ]; then
-	echo "Using specified torch backend, $TORCH_BACKEND"
+if [ -n "${UV_TORCH_BACKEND:-}" ]; then
+	echo "Using specified torch backend, $UV_TORCH_BACKEND"
 elif [ -n "${ROCM_VERSION:-}" ]; then
 	echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+	UV_TORCH_BACKEND=rocm${ROCM_VERSION%.*}
 elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 	echo "Using the torch CPU backend"
-	TORCH_BACKEND=cpu
+	UV_TORCH_BACKEND=cpu
 elif [ -n "${CUDA_VERSION:-}" ]; then
 	echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-	TORCH_BACKEND=cu${CUDA_VERSION//-/}
+	UV_TORCH_BACKEND=cu${CUDA_VERSION//-/}
 else
 	echo "Using the torch auto backend"
-	TORCH_BACKEND=auto
+	UV_TORCH_BACKEND=auto
 fi
 
-if [ -n "${VLLM_VERSION:-}" ]; then
-	echo "Specified vLLM version $VLLM_VERSION"
-	VLLM_VERSION="==$VLLM_VERSION"
+if [ -n "${PIP_VLLM_VERSION:-}" ]; then
+	echo "Installing specified version $PIP_VLLM_VERSION"
+	PIP_VLLM_VERSION="==$PIP_VLLM_VERSION"
 fi
 
-uv pip install -U vllm${VLLM_VERSION:-} \
-	--torch-backend=$TORCH_BACKEND \
-	${VLLM_EXTRA_INDEX_URL:-}
+uv pip install -U vllm${PIP_VLLM_VERSION:-} \
+	--torch-backend=$UV_TORCH_BACKEND \
+	${PIP_VLLM_EXTRA_INDEX_URL:-}
 
 # Fix up LD_LIBRARY_PATH for CUDA
 ./ldpretend.sh

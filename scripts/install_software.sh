@@ -19,21 +19,24 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-NOTEBOOK_PORT=${NOTEBOOK_PORT:-8888}
-DEMO_FLASH_ATTN_KERNEL=https://raw.githubusercontent.com/fulvius31/triton-cache-comparison/refs/heads/main/scripts/flash_attention.py
+if command -v sudo &>/dev/null; then
+	export SUDO=$(which sudo)
+fi
 
-install_user_deps() {
-	echo "Upgrading pip and installing uv ..."
-	python${PYTHON_VERSION} -m pip install --upgrade pip uv
-}
+echo "Upgrading pip and installing uv ..."
+python${PYTHON_VERSION} -m pip install --upgrade pip uv
 
-install_jupyter_notebook() {
-	if [ "${INSTALL_JUPYTER:-}" = "true" ]; then
-		echo "Installing Jupyter Notebook ..."
-		uv pip install jupyter
+if [ "${INSTALL_TOOLS:-}" = "true" ]; then
+	echo "Installing triton proton dependencies ..."
+	uv pip install llnl-hatchet
+fi
 
-		echo "Adding start_jupyter script to /usr/local/bin/start_jupyter"
-		${SUDO:-} tee /usr/local/bin/start_jupyter <<EOF
+if [ "${INSTALL_JUPYTER:-}" = "true" ]; then
+	echo "Installing Jupyter Notebook ..."
+	uv pip install jupyter
+
+	echo "Adding start_jupyter script to /usr/local/bin/start_jupyter"
+	${SUDO:-} tee /usr/local/bin/start_jupyter <<EOF
 #! /bin/bash -e
 
 # Copyright (C) 2024-2025 Red Hat, Inc.
@@ -53,70 +56,60 @@ install_jupyter_notebook() {
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 	
-uv run jupyter notebook --ip=0.0.0.0 --port=\${NOTEBOOK_PORT} --no-browser \\
+uv run jupyter notebook --ip=0.0.0.0 --port=\${NOTEBOOK_PORT:-8888} --no-browser \\
 	--allow-root --notebook-dir=\${NOTEBOOK_DIR:-\${WORKSPACE}}
 EOF
-		${SUDO:-} chmod +x /usr/local/bin/start_jupyter
-		echo "start_jupyter added!"
-	fi
-}
+	${SUDO:-} chmod +x /usr/local/bin/start_jupyter
+	echo "start_jupyter added!"
+fi
 
-install_tools() {
-	if [ ! -f "flash_attention.py" ]; then
-		echo "Downloading a test flash attention triton kernel ..."
-		curl -o "$(basename $DEMO_FLASH_ATTN_KERNEL)" $DEMO_FLASH_ATTN_KERNEL
-	fi
+if [ ${USE_CCACHE:-0} -ne 0 ]; then
+	echo "Installing ccache ..."
+	${SUDO:-} dnf -y install ccache
 
-	if [ ${USE_CCACHE:-0} -ne 0 ]; then
-		echo "Adding CCACHE environment variables to ${HOME}/.bashrc ..."
-		tee -a "${HOME}"/.bashrc <<EOF
+	echo "Adding CCACHE environment variables to ${HOME}/.bashrc ..."
+	tee -a "${HOME}/.bashrc" <<EOF
 
 # Enable CCACHE use
 export CCACHE_DIR=${WORKSPACE}/.cache/ccache
 export CCACHE_NOHASHDIR="true"
 EOF
+fi
+
+if [ -n "${CUDA_VERSION:-}" ]; then
+	echo "Installing the NVIDIA CUDA repository ..."
+	${SUDO:-} dnf -y config-manager --add-repo \
+		https://developer.download.nvidia.com/compute/cuda/repos/rhel${UBI_VERSION}/x86_64/cuda-rhel${UBI_VERSION}.repo
+
+	echo "Installing CUDA build dependencies ..."
+	${SUDO:-} dnf -y install cuda-minimal-build-$CUDA_VERSION cuda-libraries-devel-$CUDA_VERSION
+
+	if [ "${INSTALL_TOOLS:-}" = "true" ]; then
+		echo "Installing NVIDIA Nsight ..."
+		${SUDO:-} dnf -y install cublasmp cuda-cupti-$CUDA_VERSION \
+			cuda-gdb-$CUDA_VERSION cuda-nsight-$CUDA_VERSION \
+			cuda-nsight-compute-$CUDA_VERSION cuda-nsight-systems-$CUDA_VERSION
+		${SUDO:-} dnf clean all
+
+		# Create a symlink to the installed version of CUDA
+		COMPUTE_VERSION=$(ls /opt/nvidia/nsight-compute)
+		${SUDO:-} alternatives --install /usr/local/bin/ncu ncu "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu" 100
+		${SUDO:-} alternatives --install /usr/local/bin/ncu-ui ncu-ui "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu-ui" 100
+
+		uv pip install jupyterlab-nvidia-nsight nvtx
 	fi
-
-	if [ -n "${CUDA_VERSION:-}" ]; then
-		echo "Installing the NVIDIA CUDA repository ..."
-		${SUDO:-} dnf -y config-manager --add-repo \
-			https://developer.download.nvidia.com/compute/cuda/repos/rhel${UBI_VERSION}/x86_64/cuda-rhel${UBI_VERSION}.repo
-
-		if [ "${INSTALL_TOOLS:-}" = "true" ]; then
-			echo "Installing NVIDIA Nsight ..."
-			${SUDO:-} dnf -y install cublasmp cuda-cupti-${CUDA_VERSION} \
-				cuda-gdb-${CUDA_VERSION} cuda-nsight-${CUDA_VERSION} \
-				cuda-nsight-compute-${CUDA_VERSION} cuda-nsight-systems-${CUDA_VERSION}
-			${SUDO:-} dnf clean all
-
-			# Create a symlink to the installed version of CUDA
-			COMPUTE_VERSION=$(ls /opt/nvidia/nsight-compute)
-			${SUDO:-} alternatives --install /usr/local/bin/ncu ncu "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu" 100
-			${SUDO:-} alternatives --install /usr/local/bin/ncu-ui ncu-ui "/opt/nvidia/nsight-compute/${COMPUTE_VERSION}/ncu-ui" 100
-
-			uv pip install jupyterlab-nvidia-nsight nvtx
-		fi
-	elif [ -n "${ROCM_VERSION:-}" ] && [ "${INSTALL_TOOLS:-}" = "true" ]; then
+elif [ -n "${ROCM_VERSION:-}" ]; then
+	if [ "${INSTALL_TOOLS:-}" = "true" ]; then
 		echo "Installing ROCm Developer Tools ..."
-		${SUDO:-} dnf -y install rocm-developer-tools
+		${SUDO:-} dnf -y install rocm-developer-tools rocprofiler-compute
 
 		if [ -f "/opt/rocm-${ROCM_VERSION}/libexec/rocprofiler-compute/requirements.txt" ]; then
 			uv pip install -r /opt/rocm-${ROCM_VERSION}/libexec/rocprofiler-compute/requirements.txt
 		fi
+
+		echo "Installing ROCm build dependencies ..."
+		if [ -e "/opt/rocm/share/amd_smi" ]; then
+			uv pip install /opt/rocm/share/amd_smi
+		fi
 	fi
-
-}
-
-##
-## Main
-##
-
-if command -v sudo &>/dev/null; then
-	export SUDO=$(which sudo)
 fi
-
-echo "Installing user dependencies ..."
-install_user_deps
-install_jupyter_notebook
-echo "Installing tools ..."
-install_tools

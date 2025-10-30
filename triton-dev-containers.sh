@@ -25,23 +25,22 @@ set -euo pipefail
 # the user as --user $(USER) to start the container as that user.
 
 # Global Default Variables
-IMAGE_REPO=quay.io/triton-dev-containers
-IMAGE_TAG=latest
-
 ## Image versions
 UBI_VERSION=9
 CUDA_VERSION=12-8
 ROCM_VERSION=6.3.3
+
+IMAGE_REPO=quay.io/triton-dev-containers
 
 GITCONFIG_PATH="${HOME}/.gitconfig"
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 ROCR_VISIBLE_DEVICES=${ROCR_VISIBLE_DEVICES:-0}
 
 # PyPi Index URLs
-TORCH_INDEX_URL=https://download.pytorch.org/whl
+PIP_TORCH_INDEX_URL=https://download.pytorch.org/whl
 
 ## Jupyter notebook
-INSTALL_JUPYTER=true
+INSTALL_JUPYTER=false
 DEFAULT_PORT=8888
 
 ## Image modifiers
@@ -69,7 +68,7 @@ declare -A OPTS=(
 usage() {
 	cat >&2 <<EOF
 Usage: ${0##*/} [OPTION]... DEVICE
-    DEVICE                   Target device [ amd | cpu | nvidia ]
+    DEVICE                   Target device [ rocm | cpu | cuda ]
 Options
     -c REMOTE_CONNECTION     Use the remote podman system
     -d                       Remove the container on exit
@@ -90,17 +89,17 @@ Options
                                      [ ${OPTS["INSTALL_TRITON"]} ]
         INSTALL_VLLM             Install or setup the container for building vLLM
                                      [ ${OPTS["INSTALL_VLLM"]} ]
+        PIP_TORCH_INDEX_URL      http://<url> (Default: $PIP_TORCH_INDEX_URL)
+        PIP_TORCH_VERSION        Torch wheel version
+        PIP_TRITON_VERSION       Triton wheel version
+        PIP_VLLM_EXTRA_INDEX_URL http://<url> (Not used with VLLM_COMMIT)
+        PIP_VLLM_VERSION         vLLM wheel version
         ROCM_VERSION             ROCm version (Default: $ROCM_VERSION)
         ROCR_VISIBLE_DEVICES     List of AMD device indices or UUIDs (i.e. 0,GPU-DEADBEEFDEADBEEF)
-        TORCH_BACKEND            Framwork version: [ cu${CUDA_VERSION//-/} | rocm${ROCM_VERSION%.*} | cpu ]
-        TORCH_INDEX_URL          http://<url> (Default: $TORCH_INDEX_URL)
-        TORCH_VERSION            Torch wheel version
-        TRITON_VERSION           Triton wheel version
         UBI_VERSION              Ubi image version (Default: $UBI_VERSION)
         USE_CCACHE               Enable ccache [ 0 | 1 ] (Default: $USE_CCACHE)
+        UV_TORCH_BACKEND         Framwork version: [ cu${CUDA_VERSION//-/} | rocm${ROCM_VERSION%.*} | cpu ]
         VLLM_COMMIT              vLLM git commit hash for wheel install (https://wheels.vllm.ai/<commit>)
-        VLLM_EXTRA_INDEX_URL     http://<url> (Not used with VLLM_COMMIT)
-        VLLM_VERSION             vLLM wheel version
     -p [ DEFAULT | PORT ]    Expose the specified port for the Jupyter notebook server (Default: $DEFAULT_PORT)
     -r IMAGE_REPO            Image repository (Default: $IMAGE_REPO)
     -s SOURCE=PATH           Local source directories to mount as volumes
@@ -109,7 +108,7 @@ Options
         TRITON                   /path/to/triton/source
         USER                     /path/to/user/source
         VLLM                     /path/to/vllm/source
-    -t IMAGE_TAG             Image tag (Default: $IMAGE_TAG)
+    -t IMAGE_TAG             Image tag (Default: ubi${UBI_VERSION})
     -u USERNAME              Username to use inside the image
     -h                       Print usage
     -v                       Verbose
@@ -219,23 +218,24 @@ setup_volumes() {
 
 set_device_opts() {
 	case $TARGET_DEVICE in
-	amd)
+	rocm)
 		CTR_DEVICE_OPTS+=(
 			"--device=/dev/kfd"
 			"--device=/dev/dri"
 		)
 		CTR_SECURITY_OPTS+=(
 			"--cap-add=SYS_PTRACE"
+			"--group-add=render"
 			"--group-add=video"
 			"--ipc=host"
 			"--security-opt seccomp=unconfined"
 		)
 
+		set_env_var ROCM_VERSION "$ROCM_VERSION"
 		set_env_var ROCR_VISIBLE_DEVICES "$ROCR_VISIBLE_DEVICES"
-
-		IMAGE_NAME=${IMAGE_NAME}-${ROCM_VERSION}
+		IMAGE_TAG=${IMAGE_TAG:-${ROCM_VERSION}-ubi${UBI_VERSION}}
 		;;
-	nvidia)
+	cuda)
 		if command -v nvidia-ctk >/dev/null 2>&1 && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"; then
 			CTR_DEVICE_OPTS+=("--device nvidia.com/gpu=all")
 		else
@@ -263,7 +263,9 @@ set_device_opts() {
 			fi
 		fi
 
-		IMAGE_NAME=${IMAGE_NAME}-${CUDA_VERSION}
+		set_env_var CUDA_VERSION "$CUDA_VERSION"
+		set_env_var CUDA_VISIBLE_DEVICES "$CUDA_VISIBLE_DEVICES"
+		IMAGE_TAG=${IMAGE_TAG:-${CUDA_VERSION}-ubi${UBI_VERSION}}
 		;;
 	esac
 }
@@ -307,10 +309,9 @@ while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 		case "${OPTARG/=*/}" in
 		cuda_version | CUDA_VERSION)
 			CUDA_VERSION="${OPTARG/*=/}"
-			set_env_var CUDA_VERSION "$CUDA_VERSION"
 			;;
 		cuda_visible_devices | CUDA_VISIBLE_DEVICES)
-			set_env_var CUDA_VISIBLE_DEVICES "${OPTARG/*=/}"
+			CUDA_VISIBLE_DEVICES="${OPTARG/*=/}"
 			;;
 		gitconfig | GITCONFIG)
 			GITCONFIG_PATH="${OPTARG/*=/}"
@@ -333,24 +334,26 @@ while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 		install_vllm | INSTALL_VLLM)
 			set_env_var INSTALL_VLLM "${OPTARG/*=/}"
 			;;
+		pip_torch_version | PIP_TORCH_VERSION)
+			set_env_var PIP_TORCH_VERSION "${OPTARG/*=/}"
+			;;
+		pip_torch_index_url | PIP_TORCH_INDEX_URL)
+			set_env_var PIP_TORCH_INDEX_URL "${OPTARG/*=/}"
+			;;
+		pip_triton_version | PIP_TRITON_VERSION)
+			set_env_var PIP_TRITON_VERSION "${OPTARG/*=/}"
+			;;
+		pip_vllm_extra_index_url | PIP_VLLM_EXTRA_INDEX_URL)
+			set_env_var PIP_VLLM_EXTRA_INDEX_URL "${OPTARG/*=/}"
+			;;
+		pip_vllm_version | PIP_VLLM_VERSION)
+			set_env_var PIP_VLLM_VERSION "${OPTARG/*=/}"
+			;;
 		rocm_version | ROCM_VERSION)
 			ROCM_VERSION="${OPTARG/*=/}"
-			set_env_var ROCM_VERSION "$ROCM_VERSION"
 			;;
 		rorc_visible_devices | ROCR_VISIBLE_DEVICES)
-			set_env_var ROCR_VISIBLE_DEVICES "${OPTARG/*=/}"
-			;;
-		torch_backend | TORCH_BACKEND)
-			set_env_var TORCH_BACKEND "${OPTARG/*=/}"
-			;;
-		torch_version | TORCH_VERSION)
-			set_env_var TORCH_VERSION "${OPTARG/*=/}"
-			;;
-		torch_index_url | TORCH_INDEX_URL)
-			set_env_var TORCH_INDEX_URL "${OPTARG/*=/}"
-			;;
-		triton_version | TRITON_VERSION)
-			set_env_var TRITON_VERSION "${OPTARG/*=/}"
+			ROCR_VISIBLE_DEVICES="${OPTARG/*=/}"
 			;;
 		ubi_version | UBI_VERSION)
 			UBI_VERSION="${OPTARG/*=/}"
@@ -358,14 +361,11 @@ while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 		use_ccache | USE_CCACHE)
 			set_env_var USE_CCACHE "${OPTARG/*=/}"
 			;;
+		uv_torch_backend | UV_TORCH_BACKEND)
+			set_env_var UV_TORCH_BACKEND "${OPTARG/*=/}"
+			;;
 		vllm_commit | VLLM_COMMIT)
 			set_env_var VLLM_COMMIT "${OPTARG/*=/}"
-			;;
-		vllm_extra_index_url | VLLM_EXTRA_INDEX_URL)
-			set_env_var VLLM_EXTRA_INDEX_URL "${OPTARG/*=/}"
-			;;
-		vllm_version | VLLM_VERSION)
-			set_env_var VLLM_VERSION "${OPTARG/*=/}"
 			;;
 		*)
 			echo "Unknown option ${OPTARG}."
@@ -402,7 +402,7 @@ while getopts "c:dj:o:p:r:s:t:u:hv" opt; do
 			USER_PATH="${OPTARG/*=/}"
 			;;
 		*)
-			echo "Unknown source path ${OPTARG}."
+			echo "Unknown source path $OPTARG"
 			exit 1
 			;;
 		esac
@@ -437,7 +437,7 @@ if [ -z "${1:-}" ]; then
 fi
 
 TARGET_DEVICE="${1:-}"
-IMAGE_NAME=ubi${UBI_VERSION}-${TARGET_DEVICE}
+IMAGE_NAME=$TARGET_DEVICE
 
 ##
 ## Command Configuration
@@ -486,6 +486,9 @@ if [ "${DELETE_ON_EXIT:-}" = "true" ]; then
 	CTR_ARGS+=("--rm")
 fi
 
-printf "Running container image: %s/%s:%s with %s\n" "$IMAGE_REPO" "$IMAGE_NAME" "$IMAGE_TAG" "$CTR_CMD"
-printf "%s %s run -ti %s %s/%s:%s bash\n" "$CTR_CMD" "${CTR_CONNECTION:-}" "${CTR_ARGS[*]}" "$IMAGE_REPO" "$IMAGE_NAME" "$IMAGE_TAG"
-$CTR_CMD ${CTR_CONNECTION:-} run -ti ${CTR_ARGS[@]} "${IMAGE_REPO}/${IMAGE_NAME}:${IMAGE_TAG}" bash
+printf "Running container image: %s/%s:%s with %s\n" "$IMAGE_REPO" "$IMAGE_NAME" \
+	"${IMAGE_TAG:-ubi${UBI_VERSION}}" "$CTR_CMD"
+printf "%s %s run -ti %s %s/%s:%s bash\n" "$CTR_CMD" "${CTR_CONNECTION:-}" \
+	"${CTR_ARGS[*]}" "$IMAGE_REPO" "$IMAGE_NAME" "${IMAGE_TAG:-ubi${UBI_VERSION}}"
+$CTR_CMD ${CTR_CONNECTION:-} run -ti ${CTR_ARGS[@]} \
+	"${IMAGE_REPO}/${IMAGE_NAME}:${IMAGE_TAG:-ubi${UBI_VERSION}}" bash

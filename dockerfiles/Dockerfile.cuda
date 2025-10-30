@@ -14,14 +14,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG UBI_VERSION=9
-FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
+ARG BASE_IMAGE_NAME=base
+ARG BASE_IMAGE_TAG=ubi9
+FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
 
 ARG CUDA_VERSION=12-8
 
 USER 0
 
-RUN dnf -y update && \
+ARG EPEL_REPO=https://dl.fedoraproject.org/pub/epel/epel-release-latest-${UBI_VERSION}.noarch.rpm
+RUN rpm -ivh $EPEL_REPO && \
+    rpm -ql epel-release && \
+    /usr/bin/crb enable && \
+    dnf -y update && \
     dnf -y install libglvnd-opengl libxkbfile \
     qt5-qtwayland xcb-util-cursor && \
     dnf clean all && rm -rf /var/cache/dnf

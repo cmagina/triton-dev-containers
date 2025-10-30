@@ -23,10 +23,6 @@ CLONED=0
 WORKSPACE=${WORKSPACE:-${HOME}}
 
 setup_src() {
-	# if [ -n "${ROCM_VERSION:-}" ]; then
-	# 	TRITON_DIR=${WORKSPACE}/triton-rocm
-	# 	TRITON_REPO=https://github.com/ROCm/triton.git
-	# 	TRITON_GITREF="57c693b6"
 	if [ "${TRITON_CPU_BACKEND:-0}" -eq 1 ]; then
 		TRITON_DIR=${WORKSPACE}/triton-cpu
 		TRITON_REPO=https://github.com/triton-lang/triton-cpu.git
@@ -42,30 +38,27 @@ setup_src() {
 			echo "$TRITON_DIR not found. ERROR Cloning repository..."
 			exit 1
 		else
-			CLONED=1
+			pushd "$TRITON_DIR" 1>/dev/null || exit 1
+			git submodule sync
+			git submodule update --init --recursive
+
+			if [ -n "${TRITON_GITREF:-}" ]; then
+				git checkout $TRITON_GITREF
+			fi
+			popd 1>/dev/null
 		fi
+
+		echo "Setting the LLVM_GITREF as specified by Triton ..."
+		tee -a "${HOME}/.bashrc" <<EOF
+
+# Setting the LLVM Triton gitref
+export LLVM_GITREF=$(cat "${TRITON_DIR}/cmake/llvm-hash.txt")
+EOF
+
 	else
 		echo "Triton repo already present, not cloning ..."
 	fi
 
-	export TRITON_DIR
-
-	pushd "$TRITON_DIR" 1>/dev/null || exit 1
-
-	if [ "$CLONED" -eq 1 ]; then
-		git submodule sync
-		git submodule update --init --recursive
-
-		if [ -n "${TRITON_GITREF:-}" ]; then
-			git checkout $TRITON_GITREF
-		fi
-
-		echo "Installing pre-commit dependencies ..."
-		uv pip install pre-commit
-		pre-commit install
-	fi
-
-	popd 1>/dev/null
 }
 
 install_build_deps() {
@@ -80,8 +73,8 @@ install_build_deps() {
 		tee -a "${HOME}"/.bashrc <<EOF
 
 # Use ccache when building Triton
-TRITON_BUILD_WITH_CCACHE=true
-TRITON_CACHE_DIR=${WORKSPACE}/.triton/cache
+export TRITON_BUILD_WITH_CCACHE=true
+export TRITON_CACHE_DIR=${WORKSPACE}/.triton/cache
 EOF
 	fi
 
@@ -92,53 +85,32 @@ install_deps() {
 	echo "Installing triton dependencies ..."
 	uv pip install cmake ctypeslib2 matplotlib ninja \
 		numpy pandas pybind11 pytest pyyaml scipy tabulate wheel
-
-	echo "Installing triton proton dependencies ..."
-	uv pip install llnl-hatchet
-}
-
-install_src() {
-	pushd "$TRITON_DIR" 1>/dev/null || exit 1
-
-	# Ensure LLVM_BUILD_PATH is present if it was added to the user bashrc
-	# by setup_llvm
-	source ${HOME}/.bashrc
-
-	if [ -n "${LLVM_BUILD_PATH:-}" ]; then
-		echo "Building and installing llvm and triton ..."
-		make dev-install-llvm
-	else
-		echo "Building and installing triton ..."
-		uv pip install -e .
-	fi
-
-	popd 1>/dev/null
 }
 
 install_release() {
-	if [ -n "${TORCH_BACKEND:-}" ]; then
-		echo "Using specified torch backend, $TORCH_BACKEND"
+	if [ -n "${UV_TORCH_BACKEND:-}" ]; then
+		echo "Using specified torch backend, $UV_TORCH_BACKEND"
 	elif [ -n "${ROCM_VERSION:-}" ]; then
 		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-		TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+		UV_TORCH_BACKEND=rocm${ROCM_VERSION%.*}
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 		echo "Using the torch CPU backend"
-		TORCH_BACKEND=cpu
+		UV_TORCH_BACKEND=cpu
 	elif [ -n "${CUDA_VERSION:-}" ]; then
 		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-		TORCH_BACKEND=cu${CUDA_VERSION//-/}
+		UV_TORCH_BACKEND=cu${CUDA_VERSION//-/}
 	else
 		echo "Using the torch auto backend"
-		TORCH_BACKEND=auto
+		UV_TORCH_BACKEND=auto
 	fi
 
-	if [ -n "${TRITON_VERSION:-}" ]; then
-		echo "Specified Triton version $TRITON_VERSION"
-		TRITON_VERSION="==$TRITON_VERSION"
+	if [ -n "${PIP_TRITON_VERSION:-}" ]; then
+		echo "Specified Triton version $PIP_TRITON_VERSION"
+		PIP_TRITON_VERSION="==$PIP_TRITON_VERSION"
 	fi
 
-	uv pip install triton${TRITON_VERSION:-} \
-		--torch-backend=$TORCH_BACKEND
+	uv pip install triton${PIP_TRITON_VERSION:-} \
+		--torch-backend=$UV_TORCH_BACKEND
 
 	# Fix up LD_LIBRARY_PATH for CUDA
 	./ldpretend.sh
@@ -148,7 +120,6 @@ usage() {
 	cat >&2 <<EOF
 Usage: $(basename "$0") [COMMAND]
     source     Download Triton's source (if needed) and install the build deps
-    install    Build and install Triton from source
     release    Install Triton
 EOF
 }
@@ -169,13 +140,6 @@ source)
 	echo "Setting up the environment for building Triton from source..."
 	setup_src
 	install_build_deps
-	install_deps
-	;;
-install)
-	echo "Building and installing Triton from source ..."
-	setup_src
-	install_build_deps
-	install_src
 	install_deps
 	;;
 release)

@@ -19,79 +19,31 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
-env_list=""
-
-save_env() {
-	# Define environment variables to export
-	local -a save_vars
-
-	if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
-		save_vars+=("CUDA_VISIBLE_DEVICES")
-	fi
-
-	if [ -n "${ROCR_VISIBLE_DEVICES:-}" ]; then
-		save_vars+=("ROCR_VISIBLE_DEVICES")
-	fi
-
-	if [ -n "${TRITON_CPU_BACKEND:-}" ]; then
-		save_vars+=("TRITON_CPU_BACKEND")
-	fi
-
-	if [ -n "${CUDA_VERSION:-}" ]; then
-		save_vars+=("CUDA_VERSION")
-	fi	
-
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		save_vars+=("ROCM_VERSION")
-	fi
-
-	if [ -n "${TORCH_VERSION:-}" ]; then
-		save_vars+=("TORCH_VERSION")
-	fi
-
-	if [ -n "${TRITON_VERSION:-}" ]; then
-		save_vars+=("TRITON_VERSION")
-	fi
-
-	if [ -n "${VLLM_VERSION:-}" ]; then
-		save_vars+=("VLLM_VERSION")
-	fi
-	
-	if [ -n "${TORCH_INDEX_URL:-}" ]; then
-		save_vars+=("TORCH_INDEX_URL")
-	fi
-
-	if [ -n "${TORCH_BACKEND:-}" ]; then
-		save_vars+=("TORCH_BACKEND")
-	fi
-
-	if [ -n "${VLLM_EXTRA_INDEX_URL:-}" ]; then
-		save_vars+=("VLLM_EXTRA_INDEX_URL")
-	fi
-
-	if [ -n "${VLLM_COMMIT:-}" ]; then
-		save_vars+=("VLLM_COMMIT")
-	fi
-
-	if [ -n "${DISPLAY:-}" ]; then
-		save_vars+=("DISPLAY")
-	fi
-
-	if [ -n "${WAYLAND_DISPLAY:-}" ]; then
-		save_vars+=("WAYLAND_DISPLAY")
-	fi
-
-	if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-		save_vars+=("XDG_RUNTIME_DIR")
-	fi
-
-	if [ -n "${MAX_JOBS:-}" ]; then
-		save_vars+=("MAX_JOBS")
-	fi
-
-	# Create comma separated list for runuser
-	printf -v env_list '%s,' "${save_env[@]}"
-}
+declare -a SAVE_VARS=(
+		"CUDA_VERSION"
+		"CUDA_VISIBLE_DEVICES"
+		"DISPLAY"
+		"INSTALL_JUPYTER"
+		"INSTALL_TOOLS"
+		"INSTALL_LLVM"
+		"INSTALL_TORCH"
+		"INSTALL_TRITON"
+		"INSTALL_VLLM"
+		"MAX_JOBS"
+		"PIP_TORCH_INDEX_URL"
+		"PIP_TORCH_VERSION"
+		"PIP_TRITON_VERSION"
+		"PIP_VLLM_EXTRA_INDEX_URL"
+		"PIP_VLLM_VERSION"
+		"ROCM_VERSION"
+		"ROCR_VISIBLE_DEVICES"
+		"TRITON_CPU_BACKEND"
+		"USE_CCACHE"
+		"UV_TORCH_BACKEND"
+		"VLLM_COMMIT"
+		"WAYLAND_DISPLAY"
+		"XDG_RUNTIME_DIR"
+	)
 
 ##
 ## Main
@@ -100,8 +52,10 @@ save_env() {
 echo "Setting up the container environment ..."
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	./setup_user.sh
-	save_env
-	RUN_AS_USER="runuser -w "${env_list%,}" -u "$USER" --"
+	
+	# Create comma separated list for runuser
+	printf -v ENV_LIST '%s,' "${SAVE_VARS[@]}"
+	RUN_AS_USER="runuser -w "${ENV_LIST%,}" -u "$USER" --"
 fi
 
 ${RUN_AS_USER:-} ./install_software.sh

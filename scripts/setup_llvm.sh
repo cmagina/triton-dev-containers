@@ -23,16 +23,9 @@ CLONED=0
 
 WORKSPACE=${WORKSPACE:-${HOME}}
 
-REPO="triton"
-PROJECTS="mlir;llvm;lld"
-TARGETS_TO_BUILD="host;NVPTX;AMDGPU"
-
 LLVM_DIR=${WORKSPACE}/llvm-project
 LLVM_REPO=https://github.com/llvm/llvm-project.git
-LLVM_BUILD_PATH=$LLVM_DIR
-LLVM_INSTALL_PATH=${WORKSPACE}/llvm
-
-TRITON_CPU_BACKEND=${TRITON_CPU_BACKEND:-0}
+LLVM_BUILD_PATH=$LLVM_DIR/build
 
 setup_src() {
 	if [ ! -d "$LLVM_DIR" ]; then
@@ -42,21 +35,19 @@ setup_src() {
 			echo "$LLVM_DIR not found. ERROR Cloning repository..."
 			exit 1
 		else
-			CLONED=1
+			pushd "$LLVM_DIR" 1>/dev/null || exit 1
+			git fetch origin
+
+			if [ -n "${LLVM_GITREF:-}" ]; then
+				git checkout $LLVM_GITREF
+			fi
+			popd 1>/dev/null
 		fi
 	fi
 
-	pushd "$LLVM_DIR" 1>/dev/null || exit 1
-
-	if [ "$CLONED" -eq 0 ]; then
-		git fetch origin
-	fi
-
 	echo "Adding LLVM_BUILD_PATH to ${HOME}/.bashrc ..."
-	echo "export LLVM_BUILD_PATH=${LLVM_BUILD_PATH}" >>${HOME}/.bashrc
+	echo "export LLVM_BUILD_PATH=$LLVM_BUILD_PATH" >>"${HOME}/.bashrc"
 	echo "Run 'source ${HOME}/.bashrc' to update the current shell"
-
-	popd 1>/dev/null
 }
 
 install_build_deps() {

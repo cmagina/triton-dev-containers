@@ -14,8 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG UBI_VERSION=9
-FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
+ARG BASE_IMAGE_NAME=base
+ARG BASE_IMAGE_TAG=ubi9
+FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
 
 USER 0
 

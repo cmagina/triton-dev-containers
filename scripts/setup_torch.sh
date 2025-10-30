@@ -29,15 +29,9 @@ TORCH_REPO=https://github.com/pytorch/pytorch.git
 TORCH_VISION_DIR=${WORKSPACE}/torchvision
 TORCH_VISION_REPO=https://github.com/pytorch/vision.git
 
-TORCH_INDEX_URL_BASE=https://download.pytorch.org/whl
-TORCH_HDR_MSG="Installing Torch"
+PIP_TORCH_INDEX_URL_BASE=https://download.pytorch.org/whl
 
 setup_torch_src() {
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		TORCH_REPO=https://github.com/ROCm/pytorch.git
-		TORCH_GITREF="1c57644d"
-	fi
-
 	if [ ! -d "$TORCH_DIR" ]; then
 		echo "Cloning the Torch repo $TORCH_REPO to $TORCH_DIR ..."
 		git clone "$TORCH_REPO" "$TORCH_DIR"
@@ -45,35 +39,21 @@ setup_torch_src() {
 			echo "$TORCH_DIR not found. ERROR Cloning repository..."
 			exit 1
 		else
-			CLONED=1
+			pushd "$TORCH_DIR" 1>/dev/null || exit 1
+			git submodule sync
+			git submodule update --init --recursive
+
+			if [ -n "${TORCH_GITREF:-}" ]; then
+				git checkout $TORCH_GITREF
+			fi
+			popd 1>/dev/null
 		fi
 	else
 		echo "Torch repo already present, not cloning ..."
 	fi
-
-	pushd "$TORCH_DIR" 1>/dev/null || exit 1
-
-	if [ "$CLONED" -eq 1 ]; then
-		git submodule sync
-		git submodule update --init --recursive
-
-		if [ -n "${TORCH_GITREF:-}" ]; then
-			git checkout $TORCH_GITREF
-		fi
-
-		echo "Installing pre-commit dependencies ..."
-		uv pip install pre-commit
-		pre-commit install
-	fi
-
-	popd 1>/dev/null
 }
 
 setup_torchvision_src() {
-	if [ -n "${ROCM_VERSION:-}" ]; then
-		TORCH_VISION_GITREF="v0.23.0"
-	fi
-
 	if [ ! -d "$TORCH_VISION_DIR" ]; then
 		echo "Cloning the Torch repo $TORCH_VISION_REPO to $TORCH_VISION_DIR ..."
 		git clone "$TORCH_VISION_REPO" "$TORCH_VISION_DIR"
@@ -81,28 +61,18 @@ setup_torchvision_src() {
 			echo "$TORCH_VISION_DIR not found. ERROR Cloning repository..."
 			exit 1
 		else
-			CLONED=1
+			pushd "$TORCH_VISION_DIR" 1>/dev/null || exit 1
+			git submodule sync
+			git submodule update --init --recursive
+
+			if [ -n "${TORCH_VISION_GITREF:-}" ]; then
+				git checkout $TORCH_VISION_GITREF
+			fi
+			popd 1>/dev/null
 		fi
 	else
 		echo "Torch repo already present, not cloning ..."
 	fi
-
-	pushd "$TORCH_VISION_DIR" 1>/dev/null || exit 1
-
-	if [ "$CLONED" -eq 1 ]; then
-		git submodule sync
-		git submodule update --init --recursive
-
-		if [ -n "${TORCH_VISION_GITREF:-}" ]; then
-			git checkout $TORCH_VISION_GITREF
-		fi
-
-		echo "Installing pre-commit dependencies ..."
-		uv pip install pre-commit
-		pre-commit install
-	fi
-
-	popd 1>/dev/null
 }
 
 install_build_deps() {
@@ -110,7 +80,6 @@ install_build_deps() {
 
 	if [ -f requirements.txt ]; then
 		echo "Installing Torch dependencies ..."
-		# Run this command from the PyTorch directory after cloning the source code using the “Get the PyTorch Source“ section above
 		uv pip install --group dev
 		uv pip install mkl-static mkl-include
 		make triton
@@ -153,15 +122,27 @@ source)
 	exit $?
 	;;
 release)
-	TORCH_HDR_MSG="$TORCH_HDR_MSG release"
+	echo "Installing Torch release ..."
+	if [ -n "${UV_TORCH_BACKEND:-}" ]; then
+		echo "Using specified torch backend, $UV_TORCH_BACKEND"
+		UV_TORCH_BACKEND="--torch-backend=$UV_TORCH_BACKEND"
+	elif [ -n "${ROCM_VERSION:-}" ]; then
+		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+		UV_TORCH_BACKEND="--torch-backend=rocm${ROCM_VERSION%.*}"
+	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+		echo "Using the torch CPU backend"
+		UV_TORCH_BACKEND="--torch-backend=cpu"
+	elif [ -n "${CUDA_VERSION:-}" ]; then
+		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+		UV_TORCH_BACKEND="--torch-backend=cu${CUDA_VERSION//-/}"
+	else
+		echo "Using the torch auto backend"
+		UV_TORCH_BACKEND="--torch-backend=auto"
+	fi
 	;;
-nightly)
-	TORCH_HDR_MSG="$TORCH_HDR_MSG nightly"
-	TORCH_INDEX_URL_BUILD=/nightly
-	;;
-test)
-	TORCH_HDR_MSG="$TORCH_HDR_MSG test"
-	TORCH_INDEX_URL_BUILD=/test
+nightly | test)
+	echo "Installing Torch $COMMAND ..."
+	PIP_TORCH_INDEX_URL_BUILD=/$COMMAND
 	;;
 *)
 	usage
@@ -169,38 +150,34 @@ test)
 	;;
 esac
 
-echo "${TORCH_HDR_MSG} ..."
-if [ -n "${TORCH_INDEX_URL:-}" ]; then
-	echo "Using the specified index, $TORCH_INDEX_URL"
-	TORCH_INDEX_URL="--index-url  $TORCH_INDEX_URL"
+if [ -n "${PIP_TORCH_INDEX_URL:-}" ]; then
+	echo "Using the specified index, $PIP_TORCH_INDEX_URL"
+	PIP_TORCH_INDEX_URL="--index-url  $PIP_TORCH_INDEX_URL"
 else
-	TORCH_INDEX_URL="--index-url ${TORCH_INDEX_URL_BASE}${TORCH_INDEX_URL_BUILD:-}"
+	PIP_TORCH_INDEX_URL="--index-url ${PIP_TORCH_INDEX_URL_BASE}${PIP_TORCH_INDEX_URL_BUILD:-}"
 fi
 
-if [ -n "${TORCH_BACKEND:-}" ]; then
-	echo "Using specified torch backend, $TORCH_BACKEND"
-elif [ -n "${ROCM_VERSION:-}" ]; then
-	echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-	TORCH_BACKEND=rocm${ROCM_VERSION%.*}
-elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
-	echo "Using the torch CPU backend"
-	TORCH_BACKEND=cpu
-elif [ -n "${CUDA_VERSION:-}" ]; then
-	echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-	TORCH_BACKEND=cu${CUDA_VERSION//-/}
-else
-	echo "Using the torch auto backend"
-	TORCH_BACKEND=auto
+if [ -n "${PIP_TORCH_INDEX_URL_BUILD:-}" ]; then
+	echo "Using the Torch $PIP_TORCH_INDEX_URL_BUILD build ..."
+	if [ -n "${ROCM_VERSION:-}" ]; then
+		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
+		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/rocm${ROCM_VERSION%.*}
+	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
+		echo "Using the torch CPU backend"
+		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/cpu
+	elif [ -n "${CUDA_VERSION:-}" ]; then
+		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
+		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/cu${CUDA_VERSION//-/}
+	fi
 fi
 
-if [ -n "${TORCH_VERSION:-}" ]; then
-	echo "Specified Torch version $TORCH_VERSION"
-	TORCH_VERSION="==$TORCH_VERSION"
+if [ -n "${PIP_TORCH_VERSION:-}" ]; then
+	echo "Installing the specified Torch version $PIP_TORCH_VERSION"
+	PIP_TORCH_VERSION="==$PIP_TORCH_VERSION"
 fi
 
-uv pip install torch${TORCH_VERSION:-} \
-	--torch-backend=$TORCH_BACKEND \
-	$TORCH_INDEX_URL
+uv pip install torch${PIP_TORCH_VERSION:-} ${UV_TORCH_BACKEND:-} \
+	$PIP_TORCH_INDEX_URL
 
 # Fix up LD_LIBRARY_PATH for CUDA
 ./ldpretend.sh

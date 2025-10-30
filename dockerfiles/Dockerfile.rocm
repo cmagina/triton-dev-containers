@@ -14,8 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-ARG UBI_VERSION=9
-FROM quay.io/triton-dev-containers/ubi${UBI_VERSION}-base:latest AS base
+
+ARG BASE_IMAGE_NAME=base
+ARG BASE_IMAGE_TAG=ubi9
+FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
 
 USER 0
 
@@ -24,8 +26,9 @@ ARG AMDGPU_INSTALL_URL=https://repo.radeon.com/amdgpu-install/${ROCM_VERSION}/rh
 
 # Install the AMD ROCm Repo and GPG key
 RUN source /etc/os-release && \
-    AMDGPU_INSTALL_RPM=$(curl -s ${AMDGPU_INSTALL_URL}/${VERSION_ID}/ | grep href | sed -e 's/.*href="//' -e 's/".*//' |grep "amdgpu-install-${ROCM_VERSION%.*}.*${VERSION_ID%.*}.noarch.rpm") && \
-    dnf -y install ${AMDGPU_INSTALL_URL}/${VERSION_ID}/${AMDGPU_INSTALL_RPM}
+    if [ "$VERSION_ID" = "10.0" ]; then RHEL_VERSION=${VERSION_ID%.*}; else RHEL_VERSION=${VERSION_ID}; fi; \
+    AMDGPU_INSTALL_RPM=$(curl -s ${AMDGPU_INSTALL_URL}/${RHEL_VERSION}/ | grep href | sed -e 's/.*href="//' -e 's/".*//' |grep "amdgpu-install-${ROCM_VERSION%.*}.*${PLATFORM_ID#*:}.noarch.rpm") && \
+    dnf -y install ${AMDGPU_INSTALL_URL}/${RHEL_VERSION}/${AMDGPU_INSTALL_RPM}
 
 # Install the ROCm rpms
 RUN dnf -y install --nodocs --setopt=install_weak_deps=False \

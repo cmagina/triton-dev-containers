@@ -23,26 +23,18 @@ ARG UBI_VERSION
 ARG PYTHON_VERSION=3.12
 ARG WORKSPACE=/workspace
 
-ARG INSTALL_JUPYTER=true
-ARG INSTALL_LLVM=skip
-ARG INSTALL_TORCH=skip
-ARG INSTALL_TRITON=skip
-ARG INSTALL_VLLM=skip
-
 USER 0
 
-ARG EPEL_REPO=https://dl.fedoraproject.org/pub/epel/epel-release-latest-${UBI_VERSION}.noarch.rpm
-RUN rpm -ivh $EPEL_REPO && \
-    rpm -ql epel-release && \
-    /usr/bin/crb enable && \
-    dnf -y update && \
-    dnf -y install ccache clang cmake git glibc-langpack-en libxml2-devel \
+ARG GOSU_IMAGE_NAME=gosu
+ARG GOSU_IMAGE_TAG=${UBI_IMAGE}${UBI_VERSION}
+COPY --from=quay.io/triton-dev-containers/${GOSU_IMAGE_NAME}:${GOSU_IMAGE_TAG} /usr/local/bin/gosu /usr/local/bin/gosu
+
+RUN dnf -y update && \
+    dnf -y install clang cmake git glibc-langpack-en libxml2-devel \
     lld llvm llvm-libs libomp libomp-devel ninja-build openblas openblas-devel \
     python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip zlib-devel && \
     dnf clean all && rm -rf /var/cache/dnf
-
-COPY --from=quay.io/triton-dev-containers/gosu /usr/local/bin/gosu /usr/local/bin/gosu
-
+    
 # Create the /workspace directory and set permissions
 WORKDIR $WORKSPACE
 RUN python${PYTHON_VERSION} -m pip install uv && \
@@ -52,11 +44,6 @@ RUN python${PYTHON_VERSION} -m pip install uv && \
 
 ENV BASH_ENV=${WORKSPACE}/bin/activate \
     ENV=${WORKSPACE}/bin/activate \
-    INSTALL_JUPYTER=$INSTALL_JUPYTER \
-    INSTALL_LLVM=$INSTALL_LLVM \
-    INSTALL_TORCH=$INSTALL_TORCH \
-    INSTALL_TRITON=$INSTALL_TRITON \
-    INSTALL_VLLM=$INSTALL_VLLM \
     LANG=en_US.UTF-8 \
     LC_ALL=C.UTF-8 \
     PATH=${WORKSPACE}/bin:$PATH \
@@ -69,10 +56,6 @@ ENV BASH_ENV=${WORKSPACE}/bin/activate \
     UBI_VERSION=$UBI_VERSION \
     WORKSPACE=$WORKSPACE \
     XDG_CACHE_HOME=$WORKSPACE
-
-RUN tee -a "${HOME}/.bashrc" <<EOF
-export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH
-EOF
 
 COPY scripts/ldpretend.sh ${WORKSPACE}/ldpretend.sh
 COPY scripts/install_software.sh ${WORKSPACE}/install_software.sh

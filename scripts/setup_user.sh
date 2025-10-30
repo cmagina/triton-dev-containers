@@ -104,14 +104,16 @@ create_user() {
 				echo "${USER:-user}:x:$(id -u):" >>/etc/group
 			fi
 		fi
-
-		# Fix up permissions
-		chown "$USER:$USER_GID" -R "${HOME}"
-		chown "$USER:$USER_GID" -R /opt
-		chown "$USER:$USER_GID" -R ${WORKSPACE}
-		mkdir -p "/run/user/$USER_UID"
-		chown "$USER:$USER_GID" "/run/user/$USER_UID"
 	fi
+}
+
+fix_permissions() {
+	echo "Fixing permissions for user ${USER} ..."
+	chown "$USER:$USER_GID" -R "${HOME}"
+	chown "$USER:$USER_GID" -R /opt
+	chown "$USER:$USER_GID" -R ${WORKSPACE}
+	mkdir -p "/run/user/$USER_UID"
+	chown "$USER:$USER_GID" "/run/user/$USER_UID"
 }
 
 ##
@@ -122,6 +124,13 @@ if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	echo "Creating user $USER ..."
 	update_max_uid_gid
 	create_user
+	fix_permissions
+	
+	if [ -n "${ROCM_VERSION:-}" ]; then
+		echo "Adding the user ${USER} to the video and render groups ..."
+		usermod -aG video,render ${USER}
+	fi
+	
 	install_sudo
 else
 	echo "No user specified or user is root, not creating a user ..."
