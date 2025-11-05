@@ -127,14 +127,16 @@ release)
 		echo "Using specified torch backend, $UV_TORCH_BACKEND"
 		UV_TORCH_BACKEND="--torch-backend=$UV_TORCH_BACKEND"
 	elif [ -n "${ROCM_VERSION:-}" ]; then
-		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-		UV_TORCH_BACKEND="--torch-backend=rocm${ROCM_VERSION%.*}"
+		TORCH_ROCM_VERSION=$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/')
+		echo "Using the torch ROCm version $TORCH_ROCM_VERSION backend"
+		UV_TORCH_BACKEND="--torch-backend=rocm${TORCH_ROCM_VERSION}"
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 		echo "Using the torch CPU backend"
 		UV_TORCH_BACKEND="--torch-backend=cpu"
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-		UV_TORCH_BACKEND="--torch-backend=cu${CUDA_VERSION//-/}"
+		TORCH_CUDA_VERSION=$(echo $CUDA_VERSION | sed -e 's/\([0-9]*\)[.-]\([0-9]\)/\1\2/')
+		echo "Using the torch CUDA version $TORCH_CUDA_VERSION backend"
+		UV_TORCH_BACKEND="--torch-backend=cu${TORCH_CUDA_VERSION}"
 	else
 		echo "Using the torch auto backend"
 		UV_TORCH_BACKEND="--torch-backend=auto"

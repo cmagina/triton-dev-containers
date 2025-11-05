@@ -1,2 +1,4 @@
-# Generated devcontainer.json files
-*/devcontainer.json
+# Generated devcontainer files
+**/devcontainer.json
+**/setup_user.sh
+**/postStartCommand.sh

@@ -9,7 +9,7 @@ TEMPLATE="$BASE_DIR/base/devcontainer.template.json"
 UID_VAL="$(id -u)"
 GID_VAL="$(id -g)"
 USERNAME="$(id -un)"
-HIP_DEVICES="${HIP_VISIBLE_DEVICES:-0}"
+ROCR_DEVICES="${ROCR_VISIBLE_DEVICES:-0}"
 
 is_podman() {
   command -v podman &> /dev/null && podman info &> /dev/null
@@ -22,7 +22,7 @@ is_nvidia_cdi_available() {
 if [[ $# -eq 1 ]]; then
   variants=("$1")
 else
-  variants=("triton" "triton-cpu" "triton-amd")
+  variants=("cuda" "cpu" "rocm")
 fi
 
 if is_podman; then
@@ -53,7 +53,7 @@ for variant in "${variants[@]}"; do
     --arg uid "$UID_VAL" \
     --arg gid "$GID_VAL" \
     --arg username "$USERNAME" \
-    --arg hip "$HIP_DEVICES" \
+    --arg rocr "$ROCR_DEVICES" \
     --arg mount_opts "$mount_consistency" \
     --arg userns "$userns_arg" \
     --argjson nvidia_cdi "$NVIDIA_CDI" \
@@ -67,8 +67,8 @@ for variant in "${variants[@]}"; do
       | .build.args.USER_UID = $uid
       | .build.args.USER_GID = $gid
       | .workspaceMount |= sub("consistency=cached(,Z)?"; $mount_opts)
-      | (if has("containerEnv") and (.containerEnv | has("HIP_VISIBLE_DEVICES")) then
-           .containerEnv.HIP_VISIBLE_DEVICES = $hip
+      | (if has("containerEnv") and (.containerEnv | has("ROCR_VISIBLE_DEVICES")) then
+           .containerEnv.ROCR_VISIBLE_DEVICES = $rocr
          else . end)
       | (if $userns != "" then
            .runArgs = (.runArgs // [] | map(select(test("^--userns=") | not)) + [$userns])
@@ -90,7 +90,7 @@ for variant in "${variants[@]}"; do
     "$TEMPLATE" "$overlay" > "$output"
 
   # ALWAYS copy shared scripts to ensure isolation
-  for f in user.sh postStartCommand.sh; do
-    cp "$BASE_DIR/base/$f" "$BASE_DIR/$variant/$f"
+  for f in setup_user.template.sh postStartCommand.template.sh; do
+    cp "$BASE_DIR/base/$f" "$BASE_DIR/$variant/${f/.template/}"
   done
 done

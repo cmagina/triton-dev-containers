@@ -38,7 +38,7 @@ RUN dnf -y update && \
 # Create the /workspace directory and set permissions
 WORKDIR $WORKSPACE
 RUN python${PYTHON_VERSION} -m pip install uv && \
-    uv venv --python 3.12 --seed $WORKSPACE && \
+    uv venv --python ${PYTHON_VERSION} --seed $WORKSPACE && \
     echo "unset BASH_ENV PROMPT_COMMAND ENV" >> ${WORKSPACE}/bin/activate && \
     chmod -R 777 $WORKSPACE
 

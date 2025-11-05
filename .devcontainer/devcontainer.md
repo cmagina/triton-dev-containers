@@ -74,14 +74,14 @@ Once the script completes, there should be a `.devcontainer/` directory in the
 top-level of the repository being developed.
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/redhat-et/triton-dev-containers/main/.devcontainer/scripts/bootstrap-devcontainer.sh | bash -s triton-cpu
+wget -qO- https://raw.githubusercontent.com/redhat-et/triton-dev-containers/main/.devcontainer/scripts/bootstrap-devcontainer.sh | bash -s cpu
 ```
 
-> Replace `triton-cpu` (above) with one of the supported variants:
+> Replace `cpu` (above) with one of the supported variants:
 >
-> - `triton`
-> - `triton-cpu`
-> - `triton-amd`
+> - `cuda`
+> - `cpu`
+> - `rocm`
 
 #### Option 2: Clone Everything
 
