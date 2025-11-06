@@ -15,12 +15,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ARG BASE_IMAGE_NAME=base
-ARG BASE_IMAGE_TAG=ubi9
+ARG BASE_IMAGE_TAG=ubi10
 FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
 
-ARG CUDA_VERSION=12-8
-
-USER 0
+ARG CUDA_VERSION=13-0
 
 ARG EPEL_REPO=https://dl.fedoraproject.org/pub/epel/epel-release-latest-${UBI_VERSION}.noarch.rpm
 RUN rpm -ivh $EPEL_REPO && \

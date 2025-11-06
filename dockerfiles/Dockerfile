@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ARG UBI_IMAGE=ubi
-ARG UBI_VERSION=9
+ARG UBI_VERSION=10
 
 FROM registry.access.redhat.com/ubi${UBI_VERSION}/${UBI_IMAGE} AS base
 
@@ -34,7 +34,7 @@ RUN dnf -y update && \
     lld llvm llvm-libs libomp libomp-devel ninja-build openblas openblas-devel \
     python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip zlib-devel && \
     dnf clean all && rm -rf /var/cache/dnf
-    
+
 # Create the /workspace directory and set permissions
 WORKDIR $WORKSPACE
 RUN python${PYTHON_VERSION} -m pip install uv && \
@@ -54,6 +54,7 @@ ENV BASH_ENV=${WORKSPACE}/bin/activate \
     PYTHONPATH=${WORKSPACE}/lib/python${PYTHON_VERSION}/site-packages \
     TRITON_HOME=$WORKSPACE \
     UBI_VERSION=$UBI_VERSION \
+    UV_HTTP_TIMEOUT=60 \
     WORKSPACE=$WORKSPACE \
     XDG_CACHE_HOME=$WORKSPACE
 

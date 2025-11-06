@@ -14,7 +14,8 @@
   "runArgs": [
     "--device=/dev/kfd",
     "--device=/dev/dri",
-    "--security-opt", "seccomp=unconfined",
+    "--security-opt",
+    "seccomp=unconfined",
     "--security-opt=label=disable",
     "--group-add=render,video",
     "--cap-add=SYS_PTRACE",

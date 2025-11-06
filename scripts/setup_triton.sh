@@ -91,14 +91,18 @@ install_release() {
 	if [ -n "${UV_TORCH_BACKEND:-}" ]; then
 		echo "Using specified torch backend, $UV_TORCH_BACKEND"
 	elif [ -n "${ROCM_VERSION:-}" ]; then
-		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-		UV_TORCH_BACKEND=rocm${ROCM_VERSION%.*}
+		TORCH_ROCM_VERSION=$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/')
+
+		echo "Using the torch ROCm version $TORCH_ROCM_VERSION backend"
+		UV_TORCH_BACKEND=rocm${TORCH_ROCM_VERSION}
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 		echo "Using the torch CPU backend"
 		UV_TORCH_BACKEND=cpu
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-		UV_TORCH_BACKEND=cu${CUDA_VERSION//-/}
+		TORCH_CUDA_VERSION=$(echo $CUDA_VERSION | sed -e 's/\([0-9]*\)[.-]\([0-9]\)/\1\2/')
+
+		echo "Using the torch CUDA version $TORCH_CUDA_VERSION backend"
+		UV_TORCH_BACKEND=cu${TORCH_CUDA_VERSION}
 	else
 		echo "Using the torch auto backend"
 		UV_TORCH_BACKEND=auto

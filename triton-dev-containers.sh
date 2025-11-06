@@ -26,9 +26,9 @@ set -euo pipefail
 
 # Global Default Variables
 ## Image versions
-UBI_VERSION=9
-CUDA_VERSION=12-8
-ROCM_VERSION=6.3.3
+UBI_VERSION=10
+CUDA_VERSION=13-0
+ROCM_VERSION=7.1
 
 IMAGE_REPO=quay.io/triton-dev-containers
 
@@ -45,7 +45,7 @@ DEFAULT_PORT=8888
 
 ## Image modifiers
 MAX_JOBS=${MAX_JOBS:-$(nproc --all)}
-USE_CCACHE=1
+USE_CCACHE=0
 
 ## Adds --rm to the runtime args
 DELETE_ON_EXIT=false

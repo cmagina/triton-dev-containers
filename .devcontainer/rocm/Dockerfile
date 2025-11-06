@@ -31,13 +31,13 @@ RUN source /etc/os-release && \
     dnf -y install ${AMDGPU_INSTALL_URL}/${RHEL_VERSION}/${AMDGPU_INSTALL_RPM}
 
 RUN dnf install -y clang clang-libs git lld llvm \
-        python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip && \
+    python${PYTHON_VERSION}-devel python${PYTHON_VERSION}-pip && \
     dnf install -y --nodocs --setopt=install_weak_deps=False \
-        amd-smi-lib \
-        miopen-hip \
-        rocm-core \
-        rocm-hip-libraries \
-        rocminfo && \
+    amd-smi-lib \
+    miopen-hip \
+    rocm-core \
+    rocm-hip-libraries \
+    rocminfo && \
     dnf clean all && rm -rf /var/cache/yum
 
 ARG USERNAME=triton
@@ -83,9 +83,9 @@ ENV BASH_ENV=/opt/venv/bin/activate \
 RUN source /opt/venv/bin/activate && \
     ${HOME}/.local/bin/uv pip install --upgrade pip setuptools && \
     ${HOME}/.local/bin/uv pip install ninja cmake wheel pybind11 tabulate \
-        scipy ninja cmake numpy pyyaml ctypeslib2 matplotlib pandas pytest && \
+    scipy ninja cmake numpy pyyaml ctypeslib2 matplotlib pandas pytest && \
     ${HOME}/.local/bin/uv pip install --no-cache-dir torch \
-        --index-url https://download.pytorch.org/whl/rocm$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/') && \
+    --index-url https://download.pytorch.org/whl/rocm$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/') && \
     ${HOME}/.local/bin/uv pip install pre-commit
 
 WORKDIR $WORKSPACE

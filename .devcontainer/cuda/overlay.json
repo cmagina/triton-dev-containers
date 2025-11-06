@@ -14,7 +14,8 @@
   },
   "runArgs": [
     "--runtime=nvidia",
-    "--gpus", "all",
+    "--gpus",
+    "all",
     "--userns=keep-id:uid=1000,gid=1000",
     "--security-opt=label=disable"
   ],

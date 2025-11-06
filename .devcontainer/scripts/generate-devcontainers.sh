@@ -12,52 +12,52 @@ USERNAME="$(id -un)"
 ROCR_DEVICES="${ROCR_VISIBLE_DEVICES:-0}"
 
 is_podman() {
-  command -v podman &> /dev/null && podman info &> /dev/null
+	command -v podman &>/dev/null && podman info &>/dev/null
 }
 
 is_nvidia_cdi_available() {
-  command -v nvidia-ctk &> /dev/null && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"
+	command -v nvidia-ctk &>/dev/null && nvidia-ctk cdi list | grep -q "nvidia.com/gpu=all"
 }
 
 if [[ $# -eq 1 ]]; then
-  variants=("$1")
+	variants=("$1")
 else
-  variants=("cuda" "cpu" "rocm")
+	variants=("cuda" "cpu" "rocm")
 fi
 
 if is_podman; then
-  mount_consistency="consistency=cached,Z"
-  userns_arg="--userns=keep-id:uid=$UID_VAL,gid=$GID_VAL"
+	mount_consistency="consistency=cached,Z"
+	userns_arg="--userns=keep-id:uid=$UID_VAL,gid=$GID_VAL"
 else
-  mount_consistency="consistency=cached"
-  userns_arg=""
+	mount_consistency="consistency=cached"
+	userns_arg=""
 fi
 
 # Check if NVIDIA CDI is available
 NVIDIA_CDI="$(is_nvidia_cdi_available && echo "true" || echo "false")"
 
 for variant in "${variants[@]}"; do
-  overlay="$BASE_DIR/$variant/overlay.json"
-  output="$BASE_DIR/$variant/devcontainer.json"
+	overlay="$BASE_DIR/$variant/overlay.json"
+	output="$BASE_DIR/$variant/devcontainer.json"
 
-  if [[ ! -f "$overlay" ]]; then
-    echo "Skipping $variant — overlay file not found: $overlay"
-    continue
-  fi
+	if [[ ! -f "$overlay" ]]; then
+		echo "Skipping $variant — overlay file not found: $overlay"
+		continue
+	fi
 
-  echo "Generating devcontainer for: $variant"
-  echo " - Overlay: $overlay"
-  echo " - Output:  $output"
+	echo "Generating devcontainer for: $variant"
+	echo " - Overlay: $overlay"
+	echo " - Output:  $output"
 
-  jq -s \
-    --arg uid "$UID_VAL" \
-    --arg gid "$GID_VAL" \
-    --arg username "$USERNAME" \
-    --arg rocr "$ROCR_DEVICES" \
-    --arg mount_opts "$mount_consistency" \
-    --arg userns "$userns_arg" \
-    --argjson nvidia_cdi "$NVIDIA_CDI" \
-    '.[0] * .[1]
+	jq -s \
+		--arg uid "$UID_VAL" \
+		--arg gid "$GID_VAL" \
+		--arg username "$USERNAME" \
+		--arg rocr "$ROCR_DEVICES" \
+		--arg mount_opts "$mount_consistency" \
+		--arg userns "$userns_arg" \
+		--argjson nvidia_cdi "$NVIDIA_CDI" \
+		'.[0] * .[1]
       | .remoteUser = $username
       | .containerUser = $username
       | .containerEnv.USERNAME = $username
@@ -87,10 +87,10 @@ for variant in "${variants[@]}"; do
            )
            | del(.hostRequirements.gpu)
          else . end)' \
-    "$TEMPLATE" "$overlay" > "$output"
+		"$TEMPLATE" "$overlay" >"$output"
 
-  # ALWAYS copy shared scripts to ensure isolation
-  for f in setup_user.template.sh postStartCommand.template.sh; do
-    cp "$BASE_DIR/base/$f" "$BASE_DIR/$variant/${f/.template/}"
-  done
+	# ALWAYS copy shared scripts to ensure isolation
+	for f in setup_user.template.sh postStartCommand.template.sh; do
+		cp "$BASE_DIR/base/$f" "$BASE_DIR/$variant/${f/.template/}"
+	done
 done

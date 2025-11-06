@@ -15,10 +15,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ARG BASE_IMAGE_NAME=base
-ARG BASE_IMAGE_TAG=ubi9
+ARG BASE_IMAGE_TAG=ubi10
 FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
-
-USER 0
 
 ENV TRITON_CPU_BACKEND=1
 

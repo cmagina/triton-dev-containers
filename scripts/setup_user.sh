@@ -125,12 +125,12 @@ if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	update_max_uid_gid
 	create_user
 	fix_permissions
-	
+
 	if [ -n "${ROCM_VERSION:-}" ]; then
 		echo "Adding the user ${USER} to the video and render groups ..."
 		usermod -aG video,render ${USER}
 	fi
-	
+
 	install_sudo
 else
 	echo "No user specified or user is root, not creating a user ..."

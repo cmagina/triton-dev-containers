@@ -16,103 +16,103 @@
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-
 #################################################################################
 # ------------------------------------------------------------------------------
 # System environment and tooling
 # ------------------------------------------------------------------------------
-CTR_CMD					:= $(or $(shell command -v podman), $(shell command -v docker))
-mkfile_path				:= $(abspath $(lastword $(MAKEFILE_LIST)))
-source_dir				:= $(dir $(mkfile_path))
+CTR_CMD := $(or $(shell command -v podman), $(shell command -v docker))
+mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+source_dir := $(dir $(mkfile_path))
 
 # ------------------------------------------------------------------------------
 # Buildtime configuration
 # ------------------------------------------------------------------------------
-WORKSPACE=/workspace
+WORKSPACE = /workspace
 
 # ------------------------------------------------------------------------------
 # Versions
 # ------------------------------------------------------------------------------
-PYTHON_VERSION			?= 3.12
-CUDA_VERSION			?= 12-8
-ROCM_VERSION			?= 6.3.3
-UBI_VERSION				?= 9
+CUDA_VERSION ?= 13-0
+GOSU_VERSION ?= 1.19
+PYTHON_VERSION ?= 3.12
+ROCM_VERSION ?= 7.1
+UBI_VERSION ?= 10
 
 # ------------------------------------------------------------------------------
 # Image naming
 # ------------------------------------------------------------------------------
-UBI_IMAGE				?= ubi
+UBI_IMAGE ?= ubi
 
-IMAGE_REPO				?= quay.io/triton-dev-containers
-IMAGE_TAG				?= $(UBI_IMAGE)$(UBI_VERSION)
+IMAGE_REPO ?= quay.io/triton-dev-containers
+IMAGE_TAG ?= $(UBI_IMAGE)$(UBI_VERSION)
 
 # Image name definitions (clean and extensible)
-GOSU_IMAGE_NAME			?= gosu
-BASE_IMAGE_NAME			?= base
-CUDA_IMAGE_NAME			?= cuda
-ROCM_IMAGE_NAME			?= rocm
-CPU_IMAGE_NAME			?= cpu
+GOSU_IMAGE_NAME ?= gosu
+BASE_IMAGE_NAME ?= base
+CUDA_IMAGE_NAME ?= cuda
+ROCM_IMAGE_NAME ?= rocm
+CPU_IMAGE_NAME ?= cpu
 
 # Image tags
-GOSU_IMAGE_TAG			?= $(IMAGE_TAG)
-BASE_IMAGE_TAG			?= $(IMAGE_TAG)
-CUDA_IMAGE_TAG			?= $(CUDA_VERSION)-$(IMAGE_TAG)
-ROCM_IMAGE_TAG			?= $(ROCM_VERSION)-$(IMAGE_TAG)
-CPU_IMAGE_TAG			?= $(IMAGE_TAG)
+GOSU_IMAGE_TAG ?= $(GOSU_VERSION)-$(IMAGE_TAG)
+BASE_IMAGE_TAG ?= $(IMAGE_TAG)
+CUDA_IMAGE_TAG ?= $(CUDA_VERSION)-$(IMAGE_TAG)
+ROCM_IMAGE_TAG ?= $(ROCM_VERSION)-$(IMAGE_TAG)
+CPU_IMAGE_TAG ?= $(IMAGE_TAG)
 
 # ------------------------------------------------------------------------------
 # Runtime configuration
 # ------------------------------------------------------------------------------
-RUNTIME_ARGS			?=
+RUNTIME_ARGS ?=
 
 # Set the max number of jobs to use when building a framework
 # Use a lower value to decrease ram usage during a build
-MAX_JOBS				?= $(shell nproc --all)
+MAX_JOBS ?= $(shell nproc --all)
 
 # Jupyter notebook server port
-NOTEBOOK_PORT			?= 8888
+NOTEBOOK_PORT ?= 8888
 
 # Install debugging and profiling tools
-INSTALL_NSIGHT			?= false
-INSTALL_TOOLS			?= false
-INSTALL_JUPYTER			?= true
+INSTALL_NSIGHT ?= false
+INSTALL_TOOLS ?= false
+INSTALL_JUPYTER ?= true
 
 # Operation to perform for each framework (default is skip)
-INSTALL_LLVM			?= skip		# [ source | skip ]
-INSTALL_TRITON			?= skip 	# [ source | release | skip ]
-INSTALL_TORCH			?= skip 	# [ source | release | nightly | test | skip ]
-INSTALL_VLLM			?= skip		# [ source | release | nightly | skip ]
+INSTALL_LLVM ?= skip		# [ source | skip ]
+INSTALL_TRITON ?= skip 	# [ source | release | skip ]
+INSTALL_TORCH ?= skip 	# [ source | release | nightly | test | skip ]
+INSTALL_VLLM ?= skip		# [ source | release | nightly | skip ]
 
 # Framework versions to install from PyPi (latest is default for Torch)
-TORCH_VERSION			?= $(shell curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
-TRITON_VERSION			?=
-VLLM_VERSION			?=
+TORCH_VERSION ?= $(shell curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep '"tag_name":' | sed -E 's/.*"tag_name": "v?([^\"]+)".*/\1/')
+TRITON_VERSION ?=
+VLLM_VERSION ?=
 
 # Device indices (NVIDIA and AMD)
-CUDA_VISIBLE_DEVICES	?=
-ROCR_VISIBLE_DEVICES	?=
+CUDA_VISIBLE_DEVICES ?=
+ROCR_VISIBLE_DEVICES ?=
 
 # Source code paths
-llvm_path				?=
-torch_path				?=
-triton_path				?= $(source_dir)
-user_path				?=
-vllm_path				?=
-gitconfig_path			?=
+llvm_path ?=
+torch_path ?=
+triton_path ?= $(source_dir)
+user_path ?=
+vllm_path ?=
+gitconfig_path ?=
 
 # Wheel url for PyTorch
-torch_index_url			?= https://download.pytorch.org/whl
+torch_index_url ?= https://download.pytorch.org/whl
 
 # Torch backend selector for UV [ cu<cuda version> | rocm<rocm version> | cpu ]
-torch_backend			?=
+torch_backend ?=
 
 # Wheel url for vLLM
-vllm_extra_index_url	?=
+vllm_extra_index_url ?=
 
 # vLLM repo commit hash for specific wheel build install
-vllm_commit				?=
+vllm_commit ?=
 
-create_user				?= $(USER)
+create_user ?= $(USER)
 
 .PHONY: all
 all: build-images
@@ -124,7 +124,7 @@ all: build-images
 # $(3) = podman args
 # $(4) = dockerfile name
 define build-image
-	@echo Building image: $(IMAGE_REPO)/$(1):$(2) 
+	@echo Building image: $(IMAGE_REPO)/$(1):$(2)
 	$(CTR_CMD) build -t $(IMAGE_REPO)/$(1):$(2) \
 		$(3) -f dockerfiles/$(4) .
 endef
@@ -132,9 +132,10 @@ endef
 .PHONY: build-images
 build-images: cuda-image cpu-image rocm-image ## Build all images
 
-.PHONY: gosu-image 
+.PHONY: gosu-image
 gosu-image: ## Build the Base gosu image
-	$(call build-image,$(GOSU_IMAGE_NAME),$(GOSU_IMAGE_TAG),--build-arg UBI_VERSION=$(UBI_VERSION),Dockerfile.gosu)
+	$(call build-image,$(GOSU_IMAGE_NAME),$(GOSU_IMAGE_TAG),--build-arg GOSU_VERSION=$(GOSU_VERSION) \
+		--build-arg UBI_VERSION=$(UBI_VERSION),Dockerfile.gosu)
 
 define base_image_build_args
 --build-arg UBI_IMAGE=$(UBI_IMAGE) \

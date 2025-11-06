@@ -20,14 +20,14 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 set -euo pipefail
 
 usage() {
-  cat <<EOF >&2
+	cat <<EOF >&2
 Usage: $0
    -u | --user <username>
    -G | --group <group_name>
    -g | --gid <usergid>
    -i | --id <userid>
 EOF
-  exit 1
+	exit 1
 }
 
 install_sudo() {
@@ -133,41 +133,41 @@ args=$(getopt -o u:G:g:i: --long user:,group:,gid:,id: -n "$0" -- "$@") || usage
 
 eval set -- "$args"
 while [ $# -gt 0 ]; do
-  case "$1" in
-    -h | --help)
-      usage
-      ;;
-    -u | --user)
-      username="$2"
-      shift 2
-      ;;
+	case "$1" in
+	-h | --help)
+		usage
+		;;
+	-u | --user)
+		username="$2"
+		shift 2
+		;;
 	-G | --group)
-      group_name="$2"
-      shift 2
-      ;;
-    -g | --gid)
-      usergid="$2"
-      shift 2
-      ;;
-    -i | --id)
-      userid="$2"
-      shift 2
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      echo "Unsupported option: $1" >&2
-      usage
-      ;;
-  esac
+		group_name="$2"
+		shift 2
+		;;
+	-g | --gid)
+		usergid="$2"
+		shift 2
+		;;
+	-i | --id)
+		userid="$2"
+		shift 2
+		;;
+	--)
+		shift
+		break
+		;;
+	*)
+		echo "Unsupported option: $1" >&2
+		usage
+		;;
+	esac
 done
 
 # Validate required parameters
 if [ -z "$username" ] || [ -z "$usergid" ] || [ -z "$userid" ]; then
-  echo "Error: --user, --id, and --gid are required." >&2
-  usage
+	echo "Error: --user, --id, and --gid are required." >&2
+	usage
 fi
 
 DEFAULT_UID=1000

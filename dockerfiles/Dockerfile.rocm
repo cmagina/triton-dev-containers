@@ -16,12 +16,10 @@
 
 
 ARG BASE_IMAGE_NAME=base
-ARG BASE_IMAGE_TAG=ubi9
+ARG BASE_IMAGE_TAG=ubi10
 FROM quay.io/triton-dev-containers/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG} AS base
 
-USER 0
-
-ARG ROCM_VERSION=6.3.3
+ARG ROCM_VERSION=7.1
 ARG AMDGPU_INSTALL_URL=https://repo.radeon.com/amdgpu-install/${ROCM_VERSION}/rhel
 
 # Install the AMD ROCm Repo and GPG key

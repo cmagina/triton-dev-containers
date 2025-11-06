@@ -128,6 +128,7 @@ release)
 		UV_TORCH_BACKEND="--torch-backend=$UV_TORCH_BACKEND"
 	elif [ -n "${ROCM_VERSION:-}" ]; then
 		TORCH_ROCM_VERSION=$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/')
+
 		echo "Using the torch ROCm version $TORCH_ROCM_VERSION backend"
 		UV_TORCH_BACKEND="--torch-backend=rocm${TORCH_ROCM_VERSION}"
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
@@ -135,6 +136,7 @@ release)
 		UV_TORCH_BACKEND="--torch-backend=cpu"
 	elif [ -n "${CUDA_VERSION:-}" ]; then
 		TORCH_CUDA_VERSION=$(echo $CUDA_VERSION | sed -e 's/\([0-9]*\)[.-]\([0-9]\)/\1\2/')
+
 		echo "Using the torch CUDA version $TORCH_CUDA_VERSION backend"
 		UV_TORCH_BACKEND="--torch-backend=cu${TORCH_CUDA_VERSION}"
 	else
@@ -162,14 +164,18 @@ fi
 if [ -n "${PIP_TORCH_INDEX_URL_BUILD:-}" ]; then
 	echo "Using the Torch $PIP_TORCH_INDEX_URL_BUILD build ..."
 	if [ -n "${ROCM_VERSION:-}" ]; then
-		echo "Using the torch ROCm version ${ROCM_VERSION%.*} backend"
-		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/rocm${ROCM_VERSION%.*}
+		TORCH_ROCM_VERSION=$(echo $ROCM_VERSION | sed -e 's/\([0-9]\.[0-9]\).*/\1/')
+
+		echo "Using the torch ROCm version $TORCH_ROCM_VERSION backend"
+		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/rocm${TORCH_ROCM_VERSION}
 	elif [ ${TRITON_CPU_BACKEND:-0} -eq 1 ]; then
 		echo "Using the torch CPU backend"
 		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/cpu
 	elif [ -n "${CUDA_VERSION:-}" ]; then
-		echo "Using the torch CUDA version ${CUDA_VERSION//-/} backend"
-		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/cu${CUDA_VERSION//-/}
+		TORCH_CUDA_VERSION=$(echo $CUDA_VERSION | sed -e 's/\([0-9]*\)[.-]\([0-9]\)/\1\2/')
+
+		echo "Using the torch CUDA version $TORCH_CUDA_VERSION backend"
+		PIP_TORCH_INDEX_URL=${PIP_TORCH_INDEX_URL}/cu${TORCH_CUDA_VERSION}
 	fi
 fi
 

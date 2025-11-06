@@ -20,30 +20,31 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 set -euo pipefail
 
 declare -a SAVE_VARS=(
-		"CUDA_VERSION"
-		"CUDA_VISIBLE_DEVICES"
-		"DISPLAY"
-		"INSTALL_JUPYTER"
-		"INSTALL_TOOLS"
-		"INSTALL_LLVM"
-		"INSTALL_TORCH"
-		"INSTALL_TRITON"
-		"INSTALL_VLLM"
-		"MAX_JOBS"
-		"PIP_TORCH_INDEX_URL"
-		"PIP_TORCH_VERSION"
-		"PIP_TRITON_VERSION"
-		"PIP_VLLM_EXTRA_INDEX_URL"
-		"PIP_VLLM_VERSION"
-		"ROCM_VERSION"
-		"ROCR_VISIBLE_DEVICES"
-		"TRITON_CPU_BACKEND"
-		"USE_CCACHE"
-		"UV_TORCH_BACKEND"
-		"VLLM_COMMIT"
-		"WAYLAND_DISPLAY"
-		"XDG_RUNTIME_DIR"
-	)
+	"CUDA_VERSION"
+	"CUDA_VISIBLE_DEVICES"
+	"DISPLAY"
+	"INSTALL_JUPYTER"
+	"INSTALL_TOOLS"
+	"INSTALL_LLVM"
+	"INSTALL_TORCH"
+	"INSTALL_TRITON"
+	"INSTALL_VLLM"
+	"MAX_JOBS"
+	"PIP_TORCH_INDEX_URL"
+	"PIP_TORCH_VERSION"
+	"PIP_TRITON_VERSION"
+	"PIP_VLLM_EXTRA_INDEX_URL"
+	"PIP_VLLM_VERSION"
+	"ROCM_VERSION"
+	"ROCR_VISIBLE_DEVICES"
+	"TRITON_CPU_BACKEND"
+	"USE_CCACHE"
+	"UV_HTTP_TIMEOUT"
+	"UV_TORCH_BACKEND"
+	"VLLM_COMMIT"
+	"WAYLAND_DISPLAY"
+	"XDG_RUNTIME_DIR"
+)
 
 ##
 ## Main
@@ -52,7 +53,7 @@ declare -a SAVE_VARS=(
 echo "Setting up the container environment ..."
 if [ -n "${USER:-}" ] && [ "${USER:-}" != "root" ]; then
 	./setup_user.sh
-	
+
 	# Create comma separated list for runuser
 	printf -v ENV_LIST '%s,' "${SAVE_VARS[@]}"
 	RUN_AS_USER="runuser -w "${ENV_LIST%,}" -u "$USER" --"

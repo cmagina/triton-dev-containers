@@ -20,12 +20,12 @@ list: ## List all variants
 
 clean: ## Remove all generated devcontainer.json files
 	@for v in $(VARIANTS); do \
-	  echo "Removing $$v/devcontainer.json"; \
-	  rm -f $(BASE_DIR)/$$v/devcontainer.json; \
-	  echo "Removing $$v/setup_user.sh"; \
-	  rm -f $(BASE_DIR)/$$v/setup_user.sh; \
-	  echo "Removing $$v/postStartCommand.sh"; \
-	  rm -f $(BASE_DIR)/$$v/postStartCommand.sh; \
+		echo "Removing $$v/devcontainer.json"; \
+		rm -f $(BASE_DIR)/$$v/devcontainer.json; \
+		echo "Removing $$v/setup_user.sh"; \
+		rm -f $(BASE_DIR)/$$v/setup_user.sh; \
+		echo "Removing $$v/postStartCommand.sh"; \
+		rm -f $(BASE_DIR)/$$v/postStartCommand.sh; \
 	done
 
 help: ## Show this help message
