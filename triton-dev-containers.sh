@@ -28,7 +28,7 @@ set -euo pipefail
 ## Image versions
 UBI_VERSION=10
 CUDA_VERSION=13-0
-ROCM_VERSION=7.1
+ROCM_VERSION=7.0.2
 
 IMAGE_REPO=quay.io/triton-dev-containers
 

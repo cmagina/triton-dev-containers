@@ -35,7 +35,7 @@ WORKSPACE = /workspace
 CUDA_VERSION ?= 13-0
 GOSU_VERSION ?= 1.19
 PYTHON_VERSION ?= 3.12
-ROCM_VERSION ?= 7.1
+ROCM_VERSION ?= 7.0.2
 UBI_VERSION ?= 10
 
 # ------------------------------------------------------------------------------
