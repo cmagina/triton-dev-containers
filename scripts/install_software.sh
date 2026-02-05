@@ -27,6 +27,9 @@ fi
 echo "Upgrading pip and uv ..."
 python${PYTHON_VERSION} -m pip install --upgrade pip uv
 
+echo "Installing general dependencies ..."
+${SUDO:-} dnf -y install which
+
 if [ "${INSTALL_TOOLS:-}" = "true" ]; then
 	echo "Installing triton proton dependencies ..."
 	uv pip install llnl-hatchet
@@ -92,7 +95,8 @@ if [ -n "${CUDA_VERSION:-}" ]; then
 
 	echo "Installing CUDA build dependencies ..."
 	${SUDO:-} dnf -y install cuda-minimal-build-$CUDA_VERSION \
-		cuda-libraries-devel-$CUDA_VERSION cuda-nvml-devel-$CUDA_VERSION
+		cuda-libraries-devel-$CUDA_VERSION cuda-nvml-devel-$CUDA_VERSION \
+		cuda-cupti-$CUDA_VERSION cudnn cudss libcusparse-devel-$CUDA_VERSION
 
 	echo "Adding CUDA paths to the user environment ..."
 	tee -a "${HOME}/.bashrc" <<EOF
@@ -103,9 +107,9 @@ EOF
 
 	if [ "${INSTALL_TOOLS:-}" = "true" ]; then
 		echo "Installing NVIDIA Nsight ..."
-		${SUDO:-} dnf -y install cublasmp cuda-cupti-$CUDA_VERSION \
-			cuda-gdb-$CUDA_VERSION cuda-nsight-$CUDA_VERSION \
-			cuda-nsight-compute-$CUDA_VERSION cuda-nsight-systems-$CUDA_VERSION
+		${SUDO:-} dnf -y install cublasmp cuda-gdb-$CUDA_VERSION \
+			cuda-nsight-$CUDA_VERSION cuda-nsight-compute-$CUDA_VERSION \
+			cuda-nsight-systems-$CUDA_VERSION
 		${SUDO:-} dnf clean all
 
 		# Create a symlink to the installed version of CUDA

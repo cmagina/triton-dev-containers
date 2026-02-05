@@ -72,10 +72,6 @@ install_build_deps() {
 		uv pip install -r python/requirements.txt
 	fi
 
-	tee -a "${HOME}"/.bashrc <<EOF
-
-TRITON_PARALLEL_LINK_JOBS=${TRITON_PARALLEL_LINK_JOBS:-2}
-EOF
 	if [ ${USE_CCACHE:-0} -ne 0 ]; then
 		tee -a "${HOME}"/.bashrc <<EOF
 

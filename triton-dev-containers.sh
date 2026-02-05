@@ -30,7 +30,7 @@ TARGET_DEVICE=base
 ## Image versions
 CENTOS_VERSION=10
 CUDA_VERSION=13-0
-ROCM_VERSION=7.0.3
+ROCM_VERSION=7.1.1
 
 DEFAULT_IMAGE_REPO=quay.io/triton-dev-containers
 DEFAULT_IMAGE_TAG=centos${CENTOS_VERSION}
@@ -116,7 +116,6 @@ Options
         PIP_VLLM_VERSION             vLLM wheel version
         ROCM_VERSION                 ROCm version (Default: $ROCM_VERSION)
         ROCR_VISIBLE_DEVICES         List of AMD device indices or UUIDs (i.e. 0,GPU-DEADBEEFDEADBEEF)
-        TRITON_PARALLEL_LINK_JOBS
         USE_CCACHE                   Enable ccache [ 0 | 1 ] (Default: $USE_CCACHE)
         UV_TORCH_BACKEND             Framwork version: [ cu${CUDA_VERSION//-/} | rocm${ROCM_VERSION%.*} | cpu ]
     -p [ DEFAULT | PORT ]        Expose the specified port for the Jupyter notebook server (Default: $DEFAULT_PORT)
@@ -350,9 +349,6 @@ while getopts "c:d:i:j:k:o:p:rs:t:u:hv" opt; do
 		ROCR_VISIBLE_DEVICES)
 			ROCR_VISIBLE_DEVICES="${OPTARG/*=/}"
 			;;
-		TRITON_PARALLEL_LINK_JOBS)
-			TRITON_PARALLEL_LINK_JOBS=${OPTARG/*=/}
-			;;
 		USE_CCACHE)
 			set_env_var USE_CCACHE "${OPTARG/*=/}"
 			;;
@@ -465,13 +461,14 @@ if [ -n "${TARGET_STACK:-}" ]; then
 	case $TARGET_STACK in
 	helion)
 		set_env_var INSTALL_HELION "source"
+		set_env_var INSTALL_TORCH "release"
 		;;
 	torch)
 		set_env_var INSTALL_TORCH "source"
 		;;
 	triton)
+		set_env_var INSTALL_TORCH "release"
 		set_env_var INSTALL_TRITON "source"
-		set_env_var TRITON_PARALLEL_LINK_JOBS ${TRITON_PARALLEL_LINK_JOBS:-2}
 		;;
 	vllm)
 		set_env_var INSTALL_VLLM "source"

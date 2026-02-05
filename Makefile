@@ -37,7 +37,7 @@ WORKSPACE = /workspace
 CUDA_VERSION ?= 13-0
 GOSU_VERSION ?= 1.19
 PYTHON_VERSION ?= 3.12
-ROCM_VERSION ?= 7.0.3
+ROCM_VERSION ?= 7.1.1
 CENTOS_VERSION ?= 10
 
 # ------------------------------------------------------------------------------
@@ -366,7 +366,7 @@ devcontainers-help: ## Show devcontainer help
 install: $(HOME)/.local/bin/triton-dev-containers ## Install the triton-dev-containers.sh runtime script
 
 $(HOME)/.local/bin/triton-dev-containers: triton-dev-containers.sh
-	install -m 0750 $< $@
+	install -m 0750 -D $< $@
 
 .PHONY: uninstall
 uninstall: ## Uninstall the triton-dev-containers.sh runtime script

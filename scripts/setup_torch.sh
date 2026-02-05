@@ -62,6 +62,8 @@ install_build_deps() {
 		make triton
 	fi
 
+	${SUDO:-} dnf -y install numactl-devel
+
 	if [ -n "${ROCM_VERSION:-}" ]; then
 		python tools/amd_build/build_amd.py
 	fi
@@ -91,6 +93,11 @@ EOF
 if [ $# -ne 1 ]; then
 	usage
 	exit 1
+fi
+
+if command -v sudo &>/dev/null; then
+	SUDO=sudo
+	export SUDO
 fi
 
 COMMAND=${1,,}

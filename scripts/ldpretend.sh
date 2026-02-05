@@ -19,9 +19,16 @@ trap "echo -e '\nScript interrupted. Exiting gracefully.'; exit 1" SIGINT
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 
+PYTHON_CUDA_LDCONFIG_FILE=/etc/ld.so.conf.d/988-python-cuda.conf
+
+if command -v sudo &>/dev/null; then
+	SUDO=sudo
+	export SUDO
+fi
+
 if [ -d "${PYTHONPATH}/nvidia" ]; then
 	echo "Fixing the system not seeing the NVIDIA CUDA libraries installed from pip ..."
-	readarray -d ' ' cuda_libs < <(find "${PYTHONPATH}"/nvidia -iname '*.so*')
+	readarray cuda_libs < <(find "${PYTHONPATH}"/nvidia -iname '*.so*')
 
 	for lib in ${cuda_libs[@]}; do
 		baselib="$(basename "$lib")"
@@ -38,14 +45,11 @@ if [ -d "${PYTHONPATH}/nvidia" ]; then
 			ln -vs "$lib" "$libdir/$baselib"
 		fi
 	done
-
-	echo "Adding the NVIDIA CUDA libraries to LD_LIBRARY_PATH ..."
-	readarray -d ' ' cuda_dirs < <(find "${PYTHONPATH}/nvidia" -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__')
-	printf -v cuda_ld_paths '%s/lib:' "${cuda_dirs[@]}"
-	if [ -z "${LD_LIBRARY_PATH:-}" ]; then
-		LD_LIBRARY_PATH=${cuda_ld_paths%:}
-	else
-		LD_LIBRARY_PATH=${cuda_ld_paths}${LD_LIBRARY_PATH}
-	fi
-	echo export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" >>"${HOME}"/.bashrc
+	echo "Adding the NVIDIA CUDA pip installed libraries to ldconfig ..."
+	${SUDO:-} rm -f "$PYTHON_CUDA_LDCONFIG_FILE"
+	readarray -t cuda_dirs < <(find "${PYTHONPATH}/nvidia" -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__')
+	for cuda_ld_path in "${cuda_dirs[@]}"; do
+		echo "${cuda_ld_path}"/lib | ${SUDO:-} tee -a "$PYTHON_CUDA_LDCONFIG_FILE"
+	done
+	${SUDO:-} ldconfig
 fi
